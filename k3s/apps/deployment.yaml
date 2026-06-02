@@ -18,10 +18,32 @@ spec:
       containers:
       # 1. Go Proxy Data Plane Container
       - name: gateway
-        image: alpine:3.20 # Placeholder stub for local Go binary execution
-        command: ["/bin/sh", "-c", "echo 'Go Data Plane stub active' && sleep 3600"]
+        image: alpine:3.20
+        command: ["/app/bin/gateway"]
+        volumeMounts:
+        - name: shared-uds
+          mountPath: /tmp/shared
+        - name: project-code
+          mountPath: /app
+        ports:
+        - containerPort: 8080
+          name: http
 
       # 2. Python Policy Sidecar Container
       - name: sidecar
-        image: python:3.13-slim # Placeholder stub for local Python script execution
-        command: ["/bin/sh", "-c", "echo 'Python Sidecar stub active' && sleep 3600"]
+        image: python:3.13-slim
+        command: ["python", "/app/cmd/sidecar/policy.py"]
+        volumeMounts:
+        - name: shared-uds
+          mountPath: /tmp/shared
+        - name: project-code
+          mountPath: /app
+
+      volumes:
+      - name: shared-uds
+        emptyDir:
+          medium: Memory
+      - name: project-code
+        hostPath:
+          path: /var/home/victoriac/software/llm-telemetry-gateway
+          type: Directory

@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 func TestDialAndSend(t *testing.T) {
@@ -189,4 +191,23 @@ func TestHandleCompletions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMainFunction(t *testing.T) {
+	// Configure serverAddr to run on a random local port
+	oldAddr := serverAddr
+	serverAddr = "127.0.0.1:0"
+	defer func() { serverAddr = oldAddr }()
+
+	// Execute main in a goroutine
+	go main()
+
+	// Give the server a brief window to start up
+	time.Sleep(100 * time.Millisecond)
+
+	// Send signal to package-level channel to trigger graceful shutdown
+	sigChan <- syscall.SIGINT
+
+	// Give the server a brief window to shut down gracefully
+	time.Sleep(100 * time.Millisecond)
 }

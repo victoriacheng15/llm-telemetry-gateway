@@ -14,18 +14,21 @@ import (
 	"time"
 )
 
-var socketPath = "/tmp/shared/policy.sock"
+var (
+	socketPath = "/tmp/shared/policy.sock"
+	serverAddr = ":8080"
+	sigChan    = make(chan os.Signal, 1)
+)
 
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/chat/completions", handleCompletions)
 
 	srv := &http.Server{
-		Addr:    ":8080",
+		Addr:    serverAddr,
 		Handler: mux,
 	}
 
-	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {

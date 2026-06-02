@@ -1,7 +1,7 @@
 # Global Makefile configurations and flags
 MAKEFLAGS += --no-print-directory
 
-.PHONY: all freeze install lint lint-go lint-py test test-go test-py fmt fmt-go fmt-py help
+.PHONY: all freeze install lint lint-go lint-py test test-go test-py fmt fmt-go fmt-py cov cov-go cov-py help
 
 all: lint test fmt
 
@@ -30,6 +30,11 @@ test-py: ## Run Python tests using pytest in virtualenv
 	@echo "==> Running Python unit tests..."
 	PYTHONPATH=cmd/sidecar .venv/bin/python -m pytest -v
 
+cov-py: ## Run Python test coverage using pytest-cov
+	@echo "==> Running Python test coverage..."
+	PYTHONPATH=cmd/sidecar .venv/bin/python -m pytest --cov=cmd/sidecar --cov-report=term-missing
+	rm -f .coverage
+
 fmt-py: ## Format Python code
 	@echo "==> Formatting Python code..."
 	@if [ -f .venv/bin/ruff ]; then \
@@ -50,6 +55,11 @@ test-go: ## Run Go tests
 	@echo "==> Running Go unit tests..."
 	go test -v ./...
 
+cov-go: ## Run Go test coverage
+	@echo "==> Running Go test coverage..."
+	go test -cover -coverprofile=coverage.out ./...
+	rm -f coverage.out
+
 fmt-go: ## Format Go code
 	@echo "==> Formatting Go code..."
 	go fmt ./...
@@ -69,6 +79,10 @@ test: ## Run all tests
 fmt: ## Format all code
 	@$(MAKE) fmt-go
 	@$(MAKE) fmt-py
+
+cov: ## Run all test coverages
+	@$(MAKE) cov-go
+	@$(MAKE) cov-py
 
 # ==============================================================================
 # DOCUMENTATION
