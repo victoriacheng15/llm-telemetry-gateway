@@ -20,10 +20,10 @@ install: ## Install Python dependencies inside virtualenv from requirements.txt
 
 lint-py: ## Lint Python code
 	@echo "==> Linting Python code..."
-	@if command -v ruff >/dev/null 2>&1; then \
-		ruff check cmd/sidecar/*.py; \
+	@if [ -f .venv/bin/ruff ]; then \
+		.venv/bin/ruff check cmd/sidecar/*.py; \
 	else \
-		echo "Warning: 'ruff' not found in path. Skipping Python linting."; \
+		echo "Warning: 'ruff' not found in virtualenv. Skipping Python linting."; \
 	fi
 
 test-py: ## Run Python tests using pytest in virtualenv
@@ -32,10 +32,10 @@ test-py: ## Run Python tests using pytest in virtualenv
 
 fmt-py: ## Format Python code
 	@echo "==> Formatting Python code..."
-	@if command -v ruff >/dev/null 2>&1; then \
-		ruff format cmd/sidecar/*.py; \
+	@if [ -f .venv/bin/ruff ]; then \
+		.venv/bin/ruff format cmd/sidecar/*.py; \
 	else \
-		echo "Warning: 'ruff' not found in path. Skipping Python formatting."; \
+		echo "Warning: 'ruff' not found in virtualenv. Skipping Python formatting."; \
 	fi
 
 # ==============================================================================
