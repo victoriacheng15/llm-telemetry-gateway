@@ -62,5 +62,5 @@ spec:
           medium: Memory
       - name: project-code
         hostPath:
-          path: /var/home/victoriac/software/llm-telemetry-gateway
+          path: /opt/llm-telemetry-gateway
           type: Directory
