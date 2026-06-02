@@ -23,5 +23,5 @@ spec:
 
       # 2. Python Policy Sidecar Container
       - name: sidecar
-        image: python:3.12-slim # Placeholder stub for local Python script execution
+        image: python:3.13-slim # Placeholder stub for local Python script execution
         command: ["/bin/sh", "-c", "echo 'Python Sidecar stub active' && sleep 3600"]
