@@ -1,21 +1,22 @@
 # Global Makefile configurations and flags
 MAKEFLAGS += --no-print-directory
 
-.PHONY: all lint lint-go lint-py test test-go test-py fmt fmt-go fmt-py help
+.PHONY: all freeze install lint lint-go lint-py test test-go test-py fmt fmt-go fmt-py help
 
 all: lint test fmt
 
 # ==============================================================================
-# LINTING TARGETS (VERIFICATION FIRST)
+# PYTHON RUNTIME TARGETS (DEPENDENCY MANAGEMENT, LINTING, TESTING, FORMATTING)
 # ==============================================================================
 
-lint: ## Run all linters
-	@$(MAKE) lint-go
-	@$(MAKE) lint-py
+freeze: ## Freeze Python dependencies inside virtualenv to requirements.txt
+	@echo "==> Freezing Python dependencies..."
+	.venv/bin/pip freeze > requirements.txt
 
-lint-go: ## Lint Go code
-	@echo "==> Linting Go code..."
-	go vet ./...
+install: ## Install Python dependencies inside virtualenv from requirements.txt
+	@echo "==> Installing Python dependencies..."
+	python3 -m venv .venv
+	.venv/bin/pip install -r requirements.txt
 
 lint-py: ## Lint Python code
 	@echo "==> Linting Python code..."
@@ -25,39 +26,9 @@ lint-py: ## Lint Python code
 		echo "Warning: 'ruff' not found in path. Skipping Python linting."; \
 	fi
 
-# ==============================================================================
-# TESTING TARGETS (BEHAVIORAL CORRECTNESS)
-# ==============================================================================
-
-test: ## Run all tests
-	@$(MAKE) test-go
-	@$(MAKE) test-py
-
-test-go: ## Run Go tests
-	@echo "==> Running Go unit tests..."
-	go test -v ./...
-
-test-py: ## Run Python tests
+test-py: ## Run Python tests using pytest in virtualenv
 	@echo "==> Running Python unit tests..."
-	@if command -v pytest >/dev/null 2>&1; then \
-		pytest; \
-	elif python3 -m unittest discover >/dev/null 2>&1; then \
-		python3 -m unittest discover; \
-	else \
-		echo "Warning: Neither 'pytest' nor 'unittest' found in path. Skipping Python tests."; \
-	fi
-
-# ==============================================================================
-# FORMATTING TARGETS (STYLE COMPLIANCE)
-# ==============================================================================
-
-fmt: ## Format all code
-	@$(MAKE) fmt-go
-	@$(MAKE) fmt-py
-
-fmt-go: ## Format Go code
-	@echo "==> Formatting Go code..."
-	go fmt ./...
+	PYTHONPATH=cmd/sidecar .venv/bin/python -m pytest -v
 
 fmt-py: ## Format Python code
 	@echo "==> Formatting Python code..."
@@ -66,6 +37,38 @@ fmt-py: ## Format Python code
 	else \
 		echo "Warning: 'ruff' not found in path. Skipping Python formatting."; \
 	fi
+
+# ==============================================================================
+# GO RUNTIME TARGETS (LINTING, TESTING, FORMATTING)
+# ==============================================================================
+
+lint-go: ## Lint Go code
+	@echo "==> Linting Go code..."
+	go vet ./...
+
+test-go: ## Run Go tests
+	@echo "==> Running Go unit tests..."
+	go test -v ./...
+
+fmt-go: ## Format Go code
+	@echo "==> Formatting Go code..."
+	go fmt ./...
+
+# ==============================================================================
+# COMPOSITE & AUTOMATION TARGETS
+# ==============================================================================
+
+lint: ## Run all linters
+	@$(MAKE) lint-go
+	@$(MAKE) lint-py
+
+test: ## Run all tests
+	@$(MAKE) test-go
+	@$(MAKE) test-py
+
+fmt: ## Format all code
+	@$(MAKE) fmt-go
+	@$(MAKE) fmt-py
 
 # ==============================================================================
 # DOCUMENTATION
