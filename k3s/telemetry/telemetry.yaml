@@ -51,6 +51,13 @@ spec:
         - containerPort: 4317 # OTLP gRPC
         - containerPort: 4318 # OTLP HTTP
         - containerPort: 8889 # Prometheus metrics exporter
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
         volumeMounts:
         - name: config-volume
           mountPath: /conf

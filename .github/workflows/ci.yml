@@ -9,6 +9,8 @@ on:
       - 'go.mod'
       - 'go.sum'
       - 'requirements.txt'
+      - 'k3s/**/*.yaml'
+      - 'k3s/**/*.yml'
   pull_request:
     branches: [ main ]
     paths:
@@ -17,6 +19,8 @@ on:
       - 'go.mod'
       - 'go.sum'
       - 'requirements.txt'
+      - 'k3s/**/*.yaml'
+      - 'k3s/**/*.yml'
 
 env:
   python-version: '3.13'
@@ -29,6 +33,7 @@ jobs:
     outputs:
       go: ${{ steps.filter.outputs.go }}
       python: ${{ steps.filter.outputs.python }}
+      k3s: ${{ steps.filter.outputs.k3s }}
     steps:
       - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v3
@@ -42,6 +47,9 @@ jobs:
             python:
               - '**/*.py'
               - 'requirements.txt'
+            k3s:
+              - 'k3s/**/*.yaml'
+              - 'k3s/**/*.yml'
 
   python-ci:
     name: Python Lint & Test
@@ -88,3 +96,16 @@ jobs:
       - name: Run Go Unit Tests
         run: |
           make test-go
+
+  k3s-ci:
+    name: Kubernetes Lint
+    needs: changes
+    if: ${{ needs.changes.outputs.k3s == 'true' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: stackrox/kube-linter-action@v1
+        with:
+          directory: k3s
+          config: .kube-linter.yaml
