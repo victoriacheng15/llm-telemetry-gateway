@@ -23,8 +23,30 @@ env:
   go-version: '1.26'
 
 jobs:
+  changes:
+    name: Detect File Changes
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      python: ${{ steps.filter.outputs.python }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            go:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+            python:
+              - '**/*.py'
+              - 'requirements.txt'
+
   python-ci:
     name: Python Lint & Test
+    needs: changes
+    if: ${{ needs.changes.outputs.python == 'true' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -48,6 +70,8 @@ jobs:
 
   go-ci:
     name: Go Lint & Test
+    needs: changes
+    if: ${{ needs.changes.outputs.go == 'true' }}
     runs-on: ubuntu-latest
 
     steps:

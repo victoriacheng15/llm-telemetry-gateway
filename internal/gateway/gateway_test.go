@@ -1,4 +1,4 @@
-package main
+package gateway
 
 import (
 	"bytes"
@@ -80,13 +80,13 @@ func TestDialAndSend(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := dialAndSend(tt.path, tt.payload)
+			got, err := DialAndSend(tt.path, tt.payload)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("dialAndSend() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("DialAndSend() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if got != tt.expected {
-				t.Errorf("dialAndSend() = %v, want %v", got, tt.expected)
+				t.Errorf("DialAndSend() = %v, want %v", got, tt.expected)
 			}
 		})
 	}
@@ -130,10 +130,10 @@ func TestHandleCompletions(t *testing.T) {
 		}
 	}()
 
-	// Temporarily override the package-level socketPath
-	oldSocketPath := socketPath
-	socketPath = testSocket
-	defer func() { socketPath = oldSocketPath }()
+	// Temporarily override the package-level SocketPath
+	oldSocketPath := SocketPath
+	SocketPath = testSocket
+	defer func() { SocketPath = oldSocketPath }()
 
 	tests := []struct {
 		name           string
@@ -170,15 +170,15 @@ func TestHandleCompletions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.useWrongSocket {
-				socketPath = filepath.Join(tempDir, "non_existent.sock")
+				SocketPath = filepath.Join(tempDir, "non_existent.sock")
 			} else {
-				socketPath = testSocket
+				SocketPath = testSocket
 			}
 
 			req := httptest.NewRequest(tt.method, "/v1/chat/completions", bytes.NewBufferString(tt.payload))
 			rr := httptest.NewRecorder()
 
-			handleCompletions(rr, req)
+			HandleCompletions(rr, req)
 
 			if rr.Code != tt.expectedStatus {
 				t.Errorf("expected status %d, got %d", tt.expectedStatus, rr.Code)
@@ -193,21 +193,16 @@ func TestHandleCompletions(t *testing.T) {
 	}
 }
 
-func TestMainFunction(t *testing.T) {
-	// Configure serverAddr to run on a random local port
-	oldAddr := serverAddr
-	serverAddr = "127.0.0.1:0"
-	defer func() { serverAddr = oldAddr }()
+func TestRun(t *testing.T) {
+	// Execute Run in a goroutine on a random port
+	go Run("127.0.0.1:0")
 
-	// Execute main in a goroutine
-	go main()
-
-	// Give the server a brief window to start up
+	// Wait briefly for server startup
 	time.Sleep(100 * time.Millisecond)
 
-	// Send signal to package-level channel to trigger graceful shutdown
-	sigChan <- syscall.SIGINT
+	// Send a SIGINT shutdown signal directly to the exported SigChan
+	SigChan <- syscall.SIGINT
 
-	// Give the server a brief window to shut down gracefully
+	// Give the server thread time to stop gracefully
 	time.Sleep(100 * time.Millisecond)
 }
