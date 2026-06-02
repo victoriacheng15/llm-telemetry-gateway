@@ -20,6 +20,9 @@ spec:
       - name: gateway
         image: alpine:3.20
         command: ["/app/bin/gateway"]
+        env:
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector.telemetry.svc.cluster.local:4317"
         volumeMounts:
         - name: shared-uds
           mountPath: /tmp/shared
@@ -28,6 +31,13 @@ spec:
         ports:
         - containerPort: 8080
           name: http
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
 
       # 2. Python Policy Sidecar Container
       - name: sidecar
@@ -38,6 +48,13 @@ spec:
           mountPath: /tmp/shared
         - name: project-code
           mountPath: /app
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
 
       volumes:
       - name: shared-uds

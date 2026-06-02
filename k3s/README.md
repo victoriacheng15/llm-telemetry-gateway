@@ -30,9 +30,8 @@ To prevent local laptop resource starvation and ensure stable scheduling, the cl
 
 ### 1. The `telemetry` Namespace & Centralized LimitRange
 The telemetry stack (OTel Collector and Prometheus) is governed by a central `LimitRange` policy defined in `bootstrap/02-limit-range-telemetry.yaml`.
-* **Centralized Defaults**: To adhere strictly to the DRY (Don't Repeat Yourself) principle, individual workload manifests inside `telemetry/` omit their `resources` blocks.
-* **Automatic Injection**: The `LimitRange` dynamically injects a default request of **`100m CPU / 256Mi Memory`** and a default limit of **`500m CPU / 1Gi Memory`** to any container scheduled inside the namespace.
-* **API Validation Gates**: It enforces hard boundaries (**`Min: 50m CPU / 64Mi Memory`**; **`Max: 1 CPU / 2Gi Memory`**). The Kubernetes API will immediately reject any workload that requests allocations outside this boundary.
+* **Explicit Resource Declarations**: To ensure compatibility with static validation tools (such as kube-linter), individual workload manifests inside `telemetry/` explicitly declare their `resources` blocks.
+* **API Validation Gates**: The `LimitRange` acts as an admission control boundary, enforcing bounds and validating that workloads do not request allocations outside the allowed range.
 
 ### 2. The `ollama` Namespace & Sandboxing
 The local LLM cognitive diagnostic engine is isolated into its own `ollama` namespace:
