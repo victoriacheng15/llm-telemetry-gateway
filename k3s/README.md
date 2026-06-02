@@ -74,7 +74,7 @@ To guarantee absolute build reproducibility and protect the sandbox from unexpec
 | Component | Target Namespace | Image Reference | Lifecycle Phase / Purpose |
 | :--- | :--- | :--- | :--- |
 | **Go Proxy Proxy** | `gateway` | `alpine:3.20` | LTS base image, supported until May 2026. |
-| **Python Sidecar** | `gateway` | `python:3.12-slim` | Stable minor runtime release, optimized slim build. |
+| **Python Sidecar** | `gateway` | `python:3.13-slim` | Stable minor runtime release, optimized slim build. |
 | **OTel Collector** | `telemetry` | `otel/opentelemetry-collector-contrib:0.110.0` | Pinned stable minor release with Prometheus metrics export. |
 | **Prometheus DB** | `telemetry` | `prom/prometheus:v2.51.2` | Stable long-term support branch database. |
 | **Ollama LLM** | `ollama` | `ollama/ollama:0.5.1` | Pinned feature-stable release for local LLM inference. |
