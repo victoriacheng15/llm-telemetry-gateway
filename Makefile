@@ -1,7 +1,7 @@
 # Global Makefile configurations and flags
 MAKEFLAGS += --no-print-directory
 
-.PHONY: all freeze install lint lint-go lint-py test test-go test-py fmt fmt-go fmt-py cov cov-go cov-py help
+.PHONY: all freeze install lint lint-go lint-py test test-go test-py test-k3s fmt fmt-go fmt-py cov cov-go cov-py help
 
 all: lint test fmt
 
@@ -83,6 +83,15 @@ fmt: ## Format all code
 cov: ## Run all test coverages
 	@$(MAKE) cov-go
 	@$(MAKE) cov-py
+
+test-k3s: ## Run cluster pod end-to-end loopback validation
+	@echo "==> Verifying UDS socket mount inside pod..."
+	kubectl exec -n gateway deploy/llm-telemetry-gateway -c gateway -- ls -la /tmp/shared
+	@echo "==> Validating completions masking inside pod..."
+	kubectl exec -n gateway deploy/llm-telemetry-gateway -c gateway -- wget -qO- \
+		--post-data='{"prompt": "Client SSN is 123-45-6789"}' \
+		--header='Content-Type: application/json' \
+		http://localhost:8080/v1/chat/completions
 
 # ==============================================================================
 # DOCUMENTATION
