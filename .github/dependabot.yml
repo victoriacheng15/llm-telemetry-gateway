@@ -1,0 +1,7 @@
+version: 2
+updates:
+  # Automatically track and update GitHub Actions workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
