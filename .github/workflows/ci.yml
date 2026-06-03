@@ -34,6 +34,7 @@ jobs:
       go: ${{ steps.filter.outputs.go }}
       python: ${{ steps.filter.outputs.python }}
       k3s: ${{ steps.filter.outputs.k3s }}
+      markdown: ${{ steps.filter.outputs.markdown }}
     steps:
       - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v3
@@ -50,6 +51,8 @@ jobs:
             k3s:
               - 'k3s/**/*.yaml'
               - 'k3s/**/*.yml'
+            markdown:
+              - '**/*.md'
 
   python-ci:
     name: Python Lint & Test
@@ -109,3 +112,15 @@ jobs:
         with:
           directory: k3s
           config: .kube-linter.yaml
+
+  markdown-ci:
+    name: Markdown Lint
+    needs: changes
+    if: ${{ needs.changes.outputs.markdown == 'true' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run Markdown Linting
+        run: |
+          npx markdownlint-cli '**/*.md' --ignore .venv
