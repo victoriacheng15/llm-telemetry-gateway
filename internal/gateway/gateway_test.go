@@ -193,6 +193,103 @@ func TestHandleCompletions(t *testing.T) {
 	}
 }
 
+func TestHandleHealthz(t *testing.T) {
+	tests := []struct {
+		name           string
+		method         string
+		expectedStatus int
+		expectedBody   string
+	}{
+		{
+			name:           "successful healthz request",
+			method:         "GET",
+			expectedStatus: http.StatusOK,
+			expectedBody:   `{"status": "healthy"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, "/healthz", nil)
+			rr := httptest.NewRecorder()
+
+			HandleHealthz(rr, req)
+
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, rr.Code)
+			}
+
+			gotBody := strings.TrimSpace(rr.Body.String())
+			wantBody := strings.TrimSpace(tt.expectedBody)
+			if gotBody != wantBody {
+				t.Errorf("expected body %q, got %q", wantBody, gotBody)
+			}
+		})
+	}
+}
+
+func TestHandleReadyz(t *testing.T) {
+	tempDir := t.TempDir()
+	testSocket := filepath.Join(tempDir, "test_ready.sock")
+
+	// Set up socket listener for the ready case
+	listener, err := net.Listen("unix", testSocket)
+	if err != nil {
+		t.Fatalf("Failed to create mock UDS listener: %v", err)
+	}
+	defer listener.Close()
+
+	tests := []struct {
+		name           string
+		socketPath     string
+		expectedStatus int
+		expectedBody   string
+	}{
+		{
+			name:           "readyz success when UDS connectable",
+			socketPath:     testSocket,
+			expectedStatus: http.StatusOK,
+			expectedBody:   `{"status": "ready"}`,
+		},
+		{
+			name:           "readyz failure when UDS unreachable",
+			socketPath:     filepath.Join(tempDir, "non_existent.sock"),
+			expectedStatus: http.StatusServiceUnavailable,
+			expectedBody:   `{"status": "unready"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldSocketPath := SocketPath
+			SocketPath = tt.socketPath
+			defer func() { SocketPath = oldSocketPath }()
+
+			req := httptest.NewRequest("GET", "/readyz", nil)
+			rr := httptest.NewRecorder()
+
+			HandleReadyz(rr, req)
+
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, rr.Code)
+			}
+
+			body := rr.Body.String()
+			if tt.expectedStatus == http.StatusOK {
+				gotBody := strings.TrimSpace(body)
+				wantBody := strings.TrimSpace(tt.expectedBody)
+				if gotBody != wantBody {
+					t.Errorf("expected body %q, got %q", wantBody, gotBody)
+				}
+			} else {
+				if !strings.Contains(body, tt.expectedBody) {
+					t.Errorf("expected body to contain %q, got %q", tt.expectedBody, body)
+				}
+			}
+		})
+	}
+}
+
 func TestRun(t *testing.T) {
 	// Execute Run in a goroutine on a random port
 	go Run("127.0.0.1:0")

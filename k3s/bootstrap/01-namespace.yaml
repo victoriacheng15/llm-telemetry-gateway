@@ -3,18 +3,18 @@ kind: Namespace
 metadata:
   name: gateway
   labels:
-    app: llm-telemetry-gateway
+    app: gateway
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: telemetry
   labels:
-    app: llm-telemetry-gateway
+    app: gateway
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: ollama
   labels:
-    app: llm-telemetry-gateway
+    app: gateway
