@@ -1,0 +1,18 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-delay
+  namespace: gateway
+spec:
+  action: delay
+  mode: all
+  selector:
+    namespaces:
+      - gateway
+    labelSelectors:
+      app: gateway
+  delay:
+    latency: '300ms'
+    correlation: '50'
+    jitter: '50ms'
+  direction: to

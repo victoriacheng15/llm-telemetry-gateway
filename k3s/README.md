@@ -47,31 +47,29 @@ The local LLM cognitive diagnostic engine is isolated into its own `ollama` name
 
 ## 🚀 Deterministic Bootstrap Sequence
 
-To deploy the infrastructure without scheduling conflicts (ensuring logical envelopes and LimitRanges are active before containers schedule), apply the manifests in the following order:
-
-### Phase 1: Establish Cluster Boundaries (Bootstrap)
-
-Provision the namespaces and active resource limits:
+To deploy the infrastructure without scheduling conflicts (ensuring namespaces and LimitRanges are active before workloads schedule), apply the manifests in order:
 
 ```bash
+# 1. Establish namespaces and resource boundaries
 kubectl apply -f k3s/bootstrap/
-```
 
-### Phase 2: Spin Up Infrastructure Core & Cognitive Layer
-
-Deploy the telemetry routing pipelines and the LLM engine to allow them to load weights and initialize VRAM maps:
-
-```bash
+# 2. Deploy core telemetry and Ollama LLM engine
 kubectl apply -f k3s/telemetry/
 kubectl apply -f k3s/ollama/
-```
 
-### Phase 3: Deploy Application Workloads
+# 3. Deploy completions proxy gateway workload using dynamic host path
+sed "s|/opt/llm-telemetry-gateway|$PWD|g" k3s/apps/deployment.yaml | kubectl apply -f -
+kubectl apply -f k3s/apps/network-policy.yaml
 
-Deploy the co-located dual-container data plane Pod:
+# 4. Install or update Chaos Mesh controller
+helm repo add chaos-mesh https://charts.chaos-mesh.org
+helm repo update
+helm upgrade --install chaos-mesh chaos-mesh/chaos-mesh \
+  --namespace chaos-mesh \
+  --values k3s/chaos-mesh/values.yaml
 
-```bash
-kubectl apply -f k3s/apps/
+# 5. Inject network delay chaos policy
+kubectl apply -f k3s/chaos-mesh/network-delay.yaml
 ```
 
 ---

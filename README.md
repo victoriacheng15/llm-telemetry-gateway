@@ -77,11 +77,6 @@ make lint
 make fmt
 ```
 
-Deploy infrastructure (Phase 1, 2, and 3):
+Deploy infrastructure:
 
-```bash
-kubectl apply -f k3s/bootstrap/
-kubectl apply -f k3s/telemetry/
-kubectl apply -f k3s/ollama/
-kubectl apply -f k3s/apps/
-```
+For complete bootstrap instructions, cluster configuration, and chaos engineering steps, refer to [k3s/README.md](file:///var/home/victoriac/software/llm-telemetry-gateway/k3s/README.md).
