@@ -8,7 +8,7 @@ This directory houses the complete declarative Infrastructure-as-Code (IaC) mani
 
 The resources are organized into domain-driven subdirectories to enforce logical separation of concerns, path-based CI/CD permissions, and layered bootstrapping:
 
-```
+```text
 k3s/
 ├── bootstrap/
 │   ├── 01-namespace.yaml              # Core cluster namespaces (gateway, telemetry, ollama)
@@ -29,12 +29,16 @@ k3s/
 To prevent local laptop resource starvation and ensure stable scheduling, the cluster implements a multi-namespace architecture with customized resource limits:
 
 ### 1. The `telemetry` Namespace & Centralized LimitRange
+
 The telemetry stack (OTel Collector and Prometheus) is governed by a central `LimitRange` policy defined in `bootstrap/02-limit-range-telemetry.yaml`.
+
 * **Explicit Resource Declarations**: To ensure compatibility with static validation tools (such as kube-linter), individual workload manifests inside `telemetry/` explicitly declare their `resources` blocks.
 * **API Validation Gates**: The `LimitRange` acts as an admission control boundary, enforcing bounds and validating that workloads do not request allocations outside the allowed range.
 
 ### 2. The `ollama` Namespace & Sandboxing
+
 The local LLM cognitive diagnostic engine is isolated into its own `ollama` namespace:
+
 * **Separation of Concerns**: Because Ollama is a resource-intensive workload, keeping it in its own namespace prevents the telemetry `LimitRange` from throttling its execution.
 * **CPU Execution**: Configured for host CPU execution, allowing 100% portable operations out-of-the-box in local developer environments without physical GPU drivers.
 * **Resource Sandboxing**: Ollama is explicitly sandboxed to requests of **`2 CPU / 4Gi Memory`** and limits of **`4 CPU / 8Gi Memory`**, ensuring the LLM runtime has stable, isolated execution boundaries that prevent host node starvation.
@@ -46,20 +50,26 @@ The local LLM cognitive diagnostic engine is isolated into its own `ollama` name
 To deploy the infrastructure without scheduling conflicts (ensuring logical envelopes and LimitRanges are active before containers schedule), apply the manifests in the following order:
 
 ### Phase 1: Establish Cluster Boundaries (Bootstrap)
+
 Provision the namespaces and active resource limits:
+
 ```bash
 kubectl apply -f k3s/bootstrap/
 ```
 
 ### Phase 2: Spin Up Infrastructure Core & Cognitive Layer
+
 Deploy the telemetry routing pipelines and the LLM engine to allow them to load weights and initialize VRAM maps:
+
 ```bash
 kubectl apply -f k3s/telemetry/
 kubectl apply -f k3s/ollama/
 ```
 
 ### Phase 3: Deploy Application Workloads
+
 Deploy the co-located dual-container data plane Pod:
+
 ```bash
 kubectl apply -f k3s/apps/
 ```

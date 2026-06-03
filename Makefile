@@ -1,7 +1,7 @@
 # Global Makefile configurations and flags
 MAKEFLAGS += --no-print-directory
 
-.PHONY: all freeze install lint lint-go lint-py test test-go test-py test-k3s fmt fmt-go fmt-py cov cov-go cov-py help
+.PHONY: all freeze install lint lint-go lint-py lint-md test test-go test-py test-k3s fmt fmt-go fmt-py fmt-md cov cov-go cov-py build-go help
 
 all: lint test fmt
 
@@ -64,6 +64,22 @@ fmt-go: ## Format Go code
 	@echo "==> Formatting Go code..."
 	go fmt ./...
 
+build-go: ## Build the Go gateway binary statically
+	@echo "==> Building Go gateway binary..."
+	CGO_ENABLED=0 go build -ldflags "-extldflags -static" -o bin/gateway cmd/gateway/main.go
+
+# ==============================================================================
+# MARKDOWN TARGETS (LINTING, FORMATTING)
+# ==============================================================================
+
+lint-md: ## Lint Markdown files
+	@echo "==> Linting Markdown files..."
+	npx markdownlint-cli '**/*.md' --ignore .venv
+
+fmt-md: ## Format Markdown files using markdownlint-cli
+	@echo "==> Formatting Markdown files..."
+	npx markdownlint-cli '**/*.md' --ignore .venv --fix
+
 # ==============================================================================
 # COMPOSITE & AUTOMATION TARGETS
 # ==============================================================================
@@ -71,6 +87,7 @@ fmt-go: ## Format Go code
 lint: ## Run all linters
 	@$(MAKE) lint-go
 	@$(MAKE) lint-py
+	@$(MAKE) lint-md
 
 test: ## Run all tests
 	@$(MAKE) test-go
@@ -79,6 +96,7 @@ test: ## Run all tests
 fmt: ## Format all code
 	@$(MAKE) fmt-go
 	@$(MAKE) fmt-py
+	@$(MAKE) fmt-md
 
 cov: ## Run all test coverages
 	@$(MAKE) cov-go
