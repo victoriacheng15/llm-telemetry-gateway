@@ -1,0 +1,4 @@
+# Chaos Mesh Helm values configuration for local k3s environment
+chaosDaemon:
+  runtime: containerd
+  socketPath: /run/k3s/containerd/containerd.sock

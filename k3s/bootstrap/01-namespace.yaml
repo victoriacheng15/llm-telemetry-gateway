@@ -18,3 +18,10 @@ metadata:
   name: ollama
   labels:
     app: gateway
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chaos-mesh
+  labels:
+    app: gateway
