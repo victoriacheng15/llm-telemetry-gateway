@@ -1,19 +1,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: llm-telemetry-gateway
+  name: gateway
   namespace: gateway
   labels:
-    app: llm-telemetry-gateway
+    app: gateway
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: llm-telemetry-gateway
+      app: gateway
   template:
     metadata:
       labels:
-        app: llm-telemetry-gateway
+        app: gateway
     spec:
       containers:
       # 1. Go Proxy Data Plane Container

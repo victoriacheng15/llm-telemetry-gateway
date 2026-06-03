@@ -1,7 +1,11 @@
 import asyncio
 from unittest.mock import AsyncMock, patch, MagicMock
 import pytest
-from policy import mask_text, uds_lifecycle_handler, uds_server_lifecycle
+from internal.sidecar.policy import (
+    mask_text,
+    uds_lifecycle_handler,
+    uds_server_lifecycle,
+)
 
 
 @pytest.mark.parametrize(
@@ -66,10 +70,10 @@ def test_uds_lifecycle_handler_success():
     called = []
 
     @uds_lifecycle_handler
-    async def dummy_handler(reader, writer):
+    async def dummy_dummy_handler(reader, writer):
         called.append((reader, writer))
 
-    asyncio.run(dummy_handler(mock_reader, mock_writer))
+    asyncio.run(dummy_dummy_handler(mock_reader, mock_writer))
 
     assert called == [(mock_reader, mock_writer)]
     mock_writer.close.assert_called_once()
@@ -83,11 +87,11 @@ def test_uds_lifecycle_handler_exception():
     mock_writer.close = MagicMock()
 
     @uds_lifecycle_handler
-    async def dummy_handler(reader, writer):
+    async def dummy_dummy_handler(reader, writer):
         raise ValueError("Simulated handler crash")
 
     # Exception must not propagate (trapped by decorator)
-    asyncio.run(dummy_handler(mock_reader, mock_writer))
+    asyncio.run(dummy_dummy_handler(mock_reader, mock_writer))
 
     mock_writer.close.assert_called_once()
     mock_writer.wait_closed.assert_awaited_once()
@@ -106,10 +110,10 @@ def test_uds_server_lifecycle_clean_setup_and_teardown(
     called = []
 
     @uds_server_lifecycle("/tmp/shared/test.sock")
-    async def dummy_main():
+    async def dummy_dummy_main():
         called.append(True)
 
-    asyncio.run(dummy_main())
+    asyncio.run(dummy_dummy_main())
 
     assert called == [True]
     # Check that it unlinked twice: once during setup/startup and once in finally block
@@ -129,11 +133,11 @@ def test_uds_server_lifecycle_cancelled_error(
     mock_dirname.return_value = "/tmp/shared"
 
     @uds_server_lifecycle("/tmp/shared/test.sock")
-    async def dummy_main():
+    async def dummy_dummy_main():
         raise asyncio.CancelledError()
 
     # CancelledError must not propagate (trapped by decorator)
-    asyncio.run(dummy_main())
+    asyncio.run(dummy_dummy_main())
 
     # Teardown unlinking in finally block must still be executed
     assert mock_unlink.call_count == 2

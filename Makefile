@@ -21,24 +21,24 @@ install: ## Install Python dependencies inside virtualenv from requirements.txt
 lint-py: ## Lint Python code
 	@echo "==> Linting Python code..."
 	@if [ -f .venv/bin/ruff ]; then \
-		.venv/bin/ruff check cmd/sidecar/*.py; \
+		.venv/bin/ruff check cmd/ internal/; \
 	else \
 		echo "Warning: 'ruff' not found in virtualenv. Skipping Python linting."; \
 	fi
 
 test-py: ## Run Python tests using pytest in virtualenv
 	@echo "==> Running Python unit tests..."
-	PYTHONPATH=cmd/sidecar .venv/bin/python -m pytest -v
+	PYTHONPATH=. .venv/bin/python -m pytest internal/sidecar/ -v
 
 cov-py: ## Run Python test coverage using pytest-cov
 	@echo "==> Running Python test coverage..."
-	PYTHONPATH=cmd/sidecar .venv/bin/python -m pytest --cov=cmd/sidecar --cov-report=term-missing
+	PYTHONPATH=. .venv/bin/python -m pytest --cov=internal/sidecar --cov-report=term-missing internal/sidecar/
 	rm -f .coverage
 
 fmt-py: ## Format Python code
 	@echo "==> Formatting Python code..."
 	@if [ -f .venv/bin/ruff ]; then \
-		.venv/bin/ruff format cmd/sidecar/*.py; \
+		.venv/bin/ruff format cmd/ internal/; \
 	else \
 		echo "Warning: 'ruff' not found in virtualenv. Skipping Python formatting."; \
 	fi
@@ -86,9 +86,9 @@ cov: ## Run all test coverages
 
 test-k3s: ## Run cluster pod end-to-end loopback validation
 	@echo "==> Verifying UDS socket mount inside pod..."
-	kubectl exec -n gateway deploy/llm-telemetry-gateway -c gateway -- ls -la /tmp/shared
+	kubectl exec -n gateway deploy/gateway -c gateway -- ls -la /tmp/shared
 	@echo "==> Validating completions masking inside pod..."
-	kubectl exec -n gateway deploy/llm-telemetry-gateway -c gateway -- wget -qO- \
+	kubectl exec -n gateway deploy/gateway -c gateway -- wget -qO- \
 		--post-data='{"prompt": "Client SSN is 123-45-6789"}' \
 		--header='Content-Type: application/json' \
 		http://localhost:8080/v1/chat/completions

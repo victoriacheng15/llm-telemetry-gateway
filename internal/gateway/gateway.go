@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -36,20 +36,41 @@ func init() {
 	InitMetrics()
 }
 
+func initLogger() {
+	levelStr := os.Getenv("LOG_LEVEL")
+	var level slog.Level
+	switch strings.ToLower(levelStr) {
+	case "debug":
+		level = slog.LevelDebug
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+
+	opts := &slog.HandlerOptions{
+		Level: level,
+	}
+	handler := slog.NewJSONHandler(os.Stdout, opts)
+	slog.SetDefault(slog.New(handler))
+}
+
 func InitMetrics() {
 	var err error
 	inputCounter, err = meter.Int64Counter("gen_ai.usage.input_tokens",
 		metric.WithDescription("Number of input tokens processed"),
 	)
 	if err != nil {
-		log.Printf("Warning: failed to create inputCounter: %v", err)
+		slog.Warn("Failed to create inputCounter", "error", err)
 	}
 
 	outputCounter, err = meter.Int64Counter("gen_ai.usage.output_tokens",
 		metric.WithDescription("Number of output tokens processed"),
 	)
 	if err != nil {
-		log.Printf("Warning: failed to create outputCounter: %v", err)
+		slog.Warn("Failed to create outputCounter", "error", err)
 	}
 
 	durationHist, err = meter.Float64Histogram("gen_ai.client.request.duration_histogram",
@@ -57,28 +78,32 @@ func InitMetrics() {
 		metric.WithUnit("s"),
 	)
 	if err != nil {
-		log.Printf("Warning: failed to create durationHist: %v", err)
+		slog.Warn("Failed to create durationHist", "error", err)
 	}
 }
 
 func Run(serverAddr string) {
+	initLogger()
+
 	// Initialize OpenTelemetry SDK
 	ctx := context.Background()
 	shutdown, err := initMeter(ctx)
 	if err != nil {
-		log.Printf("Warning: OpenTelemetry meter initialization failed: %v", err)
+		slog.Warn("OpenTelemetry meter initialization failed", "error", err)
 	} else {
 		defer func() {
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := shutdown(shutdownCtx); err != nil {
-				log.Printf("Warning: OpenTelemetry shutdown failed: %v", err)
+				slog.Warn("OpenTelemetry shutdown failed", "error", err)
 			}
 		}()
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/chat/completions", HandleCompletions)
+	mux.HandleFunc("/healthz", HandleHealthz)
+	mux.HandleFunc("/readyz", HandleReadyz)
 
 	srv := &http.Server{
 		Addr:    serverAddr,
@@ -88,32 +113,38 @@ func Run(serverAddr string) {
 	signal.Notify(SigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		log.Printf("Go Completions Proxy listening on %s...", serverAddr)
+		slog.Info("Go Completions Proxy listening", "addr", serverAddr)
 		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-			log.Fatalf("HTTP server failed: %v", err)
+			slog.Error("HTTP server failed to start or serve", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	<-SigChan
-	log.Println("Shutdown signal received. Stopping server...")
+	slog.Info("Shutdown signal received. Stopping server...")
 	ctxGraceful, cancelGraceful := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelGraceful()
 	if err := srv.Shutdown(ctxGraceful); err != nil {
-		log.Fatalf("Server graceful shutdown failed: %v", err)
+		slog.Error("Server graceful shutdown failed", "error", err)
+		os.Exit(1)
 	}
-	log.Println("Server stopped cleanly.")
+	slog.Info("Server stopped cleanly.")
 }
 
 func HandleCompletions(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 
+	slog.Debug("Received chat completions request", "method", r.Method, "path", r.URL.Path)
+
 	if r.Method != http.MethodPost {
+		slog.Warn("Method not allowed", "method", r.Method)
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		slog.Error("Failed to read request body", "error", err)
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(`{"error": "Failed to read body"}`))
 		return
@@ -122,12 +153,14 @@ func HandleCompletions(w http.ResponseWriter, r *http.Request) {
 	payload := string(body) + "\n"
 
 	// Record input tokens
+	inputTokens := CountTokens(payload)
 	if inputCounter != nil {
-		inputCounter.Add(r.Context(), CountTokens(payload))
+		inputCounter.Add(r.Context(), inputTokens)
 	}
 
 	response, err := DialAndSend(SocketPath, payload)
 	if err != nil {
+		slog.Error("PII policy engine unreachable", "error", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		w.Write([]byte(`{"error": "PII policy engine unreachable"}`))
@@ -135,14 +168,23 @@ func HandleCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Record output tokens
+	outputTokens := CountTokens(response)
 	if outputCounter != nil {
-		outputCounter.Add(r.Context(), CountTokens(response))
+		outputCounter.Add(r.Context(), outputTokens)
 	}
 
 	// Record duration histogram
+	duration := time.Since(startTime).Seconds()
 	if durationHist != nil {
-		durationHist.Record(r.Context(), time.Since(startTime).Seconds())
+		durationHist.Record(r.Context(), duration)
 	}
+
+	slog.Info("Request completed successfully",
+		"duration_seconds", duration,
+		"input_tokens", inputTokens,
+		"output_tokens", outputTokens,
+		"status", http.StatusOK,
+	)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(response))
@@ -215,4 +257,27 @@ func initMeter(ctx context.Context) (func(context.Context) error, error) {
 	return func(shutdownCtx context.Context) error {
 		return meterProvider.Shutdown(shutdownCtx)
 	}, nil
+}
+
+func HandleHealthz(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status": "healthy"}`))
+}
+
+func HandleReadyz(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Test dialing the UDS socket to verify readiness
+	conn, err := net.DialTimeout("unix", SocketPath, 100*time.Millisecond)
+	if err != nil {
+		slog.Warn("Readiness check failed: PII policy engine unreachable", "error", err)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte(fmt.Sprintf(`{"status": "unready", "reason": "PII policy engine unreachable: %v"}`, err)))
+		return
+	}
+	conn.Close()
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status": "ready"}`))
 }

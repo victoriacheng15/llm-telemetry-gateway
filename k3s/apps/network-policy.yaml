@@ -1,12 +1,12 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: llm-telemetry-gateway-policy
+  name: gateway-policy
   namespace: gateway
 spec:
   podSelector:
     matchLabels:
-      app: llm-telemetry-gateway
+      app: gateway
   policyTypes:
   - Ingress
   ingress:
