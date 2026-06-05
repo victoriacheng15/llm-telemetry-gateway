@@ -1,0 +1,20 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: node-stress
+  namespace: gateway
+spec:
+  mode: all
+  selector:
+    namespaces:
+      - gateway
+    labelSelectors:
+      app: gateway
+  stressors:
+    cpu:
+      workers: 1
+      load: 50
+    memory:
+      workers: 1
+      size: '128MB'
+  duration: '5m'

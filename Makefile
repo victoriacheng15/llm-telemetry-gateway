@@ -81,6 +81,15 @@ fmt-md: ## Format Markdown files using markdownlint-cli
 	npx markdownlint-cli '**/*.md' --ignore .venv --fix
 
 # ==============================================================================
+# KUBERNETES TARGETS (LINTING)
+# ==============================================================================
+
+lint-k3s: ## Lint Kubernetes manifests using kube-linter
+	@echo "==> Linting Kubernetes manifests..."
+	~/go/bin/kube-linter lint k3s/
+
+
+# ==============================================================================
 # COMPOSITE & AUTOMATION TARGETS
 # ==============================================================================
 
@@ -88,6 +97,7 @@ lint: ## Run all linters
 	@$(MAKE) lint-go
 	@$(MAKE) lint-py
 	@$(MAKE) lint-md
+	@$(MAKE) lint-k3s
 
 test: ## Run all tests
 	@$(MAKE) test-go
