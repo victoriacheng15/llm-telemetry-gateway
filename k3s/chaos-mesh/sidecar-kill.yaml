@@ -1,0 +1,15 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: sidecar-kill
+  namespace: gateway
+spec:
+  action: container-kill
+  mode: all
+  containerNames:
+    - sidecar
+  selector:
+    namespaces:
+      - gateway
+    labelSelectors:
+      app: gateway
