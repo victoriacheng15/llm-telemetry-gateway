@@ -19,7 +19,7 @@ spec:
       # 1. Go Proxy Data Plane Container
       - name: gateway
         image: alpine:3.20
-        command: ["/app/bin/gateway"]
+        command: ["sh", "-c", "/app/bin/gateway 2>&1 | tee /tmp/shared/gateway.log"]
         env:
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: "http://otel-collector.telemetry.svc.cluster.local:4317"

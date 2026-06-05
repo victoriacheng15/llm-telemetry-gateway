@@ -1,10 +1,16 @@
 import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock, mock_open
 import pytest
 from internal.sidecar.policy import (
     mask_text,
     uds_lifecycle_handler,
     uds_server_lifecycle,
+    get_cpu_utilization,
+    get_memory_utilization,
+    get_proxy_metrics,
+    parse_logs,
+    detect_anomalies,
+    build_prompt_context,
 )
 
 
@@ -142,3 +148,96 @@ def test_uds_server_lifecycle_cancelled_error(
     # Teardown unlinking in finally block must still be executed
     assert mock_unlink.call_count == 2
     mock_unlink.assert_any_call("/tmp/shared/test.sock")
+
+
+# ==============================================================================
+# TELEMETRY & AIOPS EVALUATION TESTS
+# ==============================================================================
+
+
+def test_get_cpu_utilization():
+    # Reset states for clean test
+    import internal.sidecar.policy as policy
+    policy.last_cpu_idle = None
+    policy.last_cpu_total = None
+
+    metrics_text_1 = (
+        "node_cpu_seconds_total{mode=\"idle\"} 10.0\n"
+        "node_cpu_seconds_total{mode=\"user\"} 10.0\n"
+    )
+    metrics_text_2 = (
+        "node_cpu_seconds_total{mode=\"idle\"} 15.0\n"
+        "node_cpu_seconds_total{mode=\"user\"} 25.0\n"
+    )
+    # First call sets the baseline
+    util1 = get_cpu_utilization(metrics_text_1)
+    assert util1 is None
+
+    # Second call computes delta: idle delta = 5, total delta = 15.
+    # cpu util = (1 - 5/15) * 100 = 66.67%
+    util2 = get_cpu_utilization(metrics_text_2)
+    assert util2 is not None
+    assert abs(util2 - 75.0) < 0.01
+
+
+def test_get_memory_utilization():
+    metrics_text = (
+        "node_memory_MemTotal_bytes 1000\n"
+        "node_memory_MemAvailable_bytes 200\n"
+    )
+    util = get_memory_utilization(metrics_text)
+    assert util == 80.0
+
+
+def test_get_proxy_metrics():
+    metrics_text = (
+        "gen_ai_usage_input_tokens 5\n"
+        "gen_ai_usage_output_tokens 10\n"
+        "gen_ai_client_request_duration_histogram_sum 0.5\n"
+        "gen_ai_client_request_duration_histogram_count 2\n"
+    )
+    stats = get_proxy_metrics(metrics_text)
+    assert stats["input_tokens"] == 5
+    assert stats["output_tokens"] == 10
+    assert stats["avg_duration_seconds"] == 0.25
+    assert stats["request_count"] == 2
+
+
+@patch("os.path.exists", return_value=True)
+def test_parse_logs(mock_exists):
+    import internal.sidecar.policy as policy
+    policy.log_file_offset = 0
+
+    log_content = '{"status": 200, "duration_seconds": 0.05, "msg": "ok"}\n'
+    with patch("builtins.open", mock_open(read_data=log_content)):
+        logs = parse_logs()
+        assert len(logs) == 1
+        assert logs[0]["status"] == 200
+
+
+def test_detect_anomalies():
+    logs = [{"status": 500, "msg": "Internal Server Error"}, {"status": 200, "duration_seconds": 0.25}]
+    anomalies = detect_anomalies(85.0, 90.0, logs, health_ok=False, ready_ok=False)
+
+    assert any("High Host CPU" in a for a in anomalies)
+    assert any("High Host Memory" in a for a in anomalies)
+    assert any("healthz check failed" in a for a in anomalies)
+    assert any("readyz check failed" in a for a in anomalies)
+    assert any("server error status: 500" in a for a in anomalies)
+    assert any("High request latency" in a for a in anomalies)
+
+
+def test_build_prompt_context():
+    stats = {
+        "request_count": 5,
+        "input_tokens": 10,
+        "output_tokens": 20,
+        "avg_duration_seconds": 0.05
+    }
+    anomalies = ["High Host CPU Utilization: 85.00%"]
+    ctx = build_prompt_context(85.0, 50.0, stats, anomalies)
+
+    assert "=== Telemetry Diagnostics Context ===" in ctx
+    assert "System Status: ANOMALOUS" in ctx
+    assert "Host CPU Utilization: 85.0%" in ctx
+    assert "[ALERT] High Host CPU Utilization: 85.00%" in ctx
