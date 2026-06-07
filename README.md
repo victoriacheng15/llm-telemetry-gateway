@@ -47,6 +47,8 @@ flowchart TB
 | Language | Go, Python |
 | Infrastructure | Kubernetes (k3s), Docker |
 | Observability | OpenTelemetry, Prometheus, Grafana |
+| Cognitive Diagnostics | Ollama (Qwen 2.5) |
+| Chaos Engineering | Chaos Mesh |
 | Testing | Go `testing` package, Python `pytest` |
 | CI/CD | GitHub Actions |
 
@@ -54,7 +56,7 @@ flowchart TB
 
 ## Documentation
 
-- [Architecture](./docs/architecture.md)
+- [Architecture](./docs/architecture/README.md)
 - [Observability](./docs/observability.md)
 - [GitHub Workflows](./docs/workflows.md)
 
@@ -72,11 +74,12 @@ make build-go
 Run checks:
 
 ```bash
-make test
-make lint
-make fmt
+make test      # Runs Go and Python unit tests
+make test-k3s  # Runs cluster pod end-to-end loopback validation
+make lint      # Runs Go, Python, Markdown, and Kubernetes manifest linters
+make fmt       # Formats all source files
 ```
 
 Deploy infrastructure:
 
-For complete bootstrap instructions, cluster configuration, and chaos engineering steps, refer to [k3s/README.md](file:///var/home/victoriac/software/llm-telemetry-gateway/k3s/README.md).
+For complete bootstrap instructions, cluster configuration, and chaos engineering steps, refer to [k3s/README.md](./k3s/README.md).

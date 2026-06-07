@@ -43,6 +43,9 @@ spec:
       - name: sidecar
         image: python:3.13-slim
         command: ["python", "/app/cmd/sidecar/policy.py"]
+        env:
+        - name: PYTHONUNBUFFERED
+          value: "1"
         volumeMounts:
         - name: shared-uds
           mountPath: /tmp/shared
