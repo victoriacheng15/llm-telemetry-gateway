@@ -1,6 +1,6 @@
-# Architecture Design Document
+# Core Architecture & IPC
 
-This document outlines the detailed system design, IPC mechanisms, and lifecycle governance of the LLM Telemetry Gateway.
+This document details the core data plane design, Inter-Process Communication (IPC), and reliability patterns of the LLM Telemetry Gateway.
 
 ---
 
@@ -10,13 +10,21 @@ The gateway is built to intercept completions traffic directed towards Large Lan
 
 ```mermaid
 flowchart TB
-    Client["Client Request"]
-    --> Proxy["Completions Proxy"]
-    
-    Proxy -->|1. Raw Prompt| Engine["Policy Engine"]
-    Engine -->|2. Sanitized Payload| Proxy
-    
-    Proxy -->|3. Clean Completion| Upstream["Upstream LLM"]
+    subgraph DataPath["Synchronous Completions Data Path"]
+        Client["Client Request"] -->|"HTTP POST"| Proxy["Go Completions Proxy"]
+        Proxy -->|"1. Raw Prompt (IPC)"| Sidecar["Python Policy Sidecar"]
+        Sidecar -->|"2. Masked Prompt"| Proxy
+        Proxy -->|"3. Sanitized Request"| Upstream["Upstream LLM"]
+    end
+
+    subgraph AIOpsPath["Asynchronous AIOps Control Path"]
+        Exporter["Node Exporter"] -->|"System Stats"| Collector["OTel Collector (Port 8889)"]
+        SidecarLoop["Python Diagnostics Loop (10s)"] -->|"Scrapes Metrics"| Collector
+        SidecarLoop -->|"HTTP Probes"| Proxy
+        SidecarLoop -->|"Tails Logs"| SharedLog["gateway.log (Shared Mount)"]
+        SidecarLoop -->|"Queries LLM"| Ollama["Ollama API Service"]
+        Ollama -->|"Writes RCA Logs"| RCALog["rca.log"]
+    end
 ```
 
 ---
@@ -28,7 +36,7 @@ To minimize proxy latency overhead, the Go completions proxy and the Python poli
 ### Why Unix Domain Sockets?
 
 - **Zero-Network Overhead**: Communicating over UDS bypasses the TCP loopback network stack entirely, eliminating kernel syscall overhead and reducing latency to sub-millisecond ranges.
-- **Security Boundaries**: UDS communication is restricted to container sharing the same local filesystem namespace. Under our `emptyDir` mount layout, socket access is isolated strictly within the boundary of the individual Pod.
+- **Security Boundaries**: UDS communication is restricted to containers sharing the same local filesystem namespace. Under our `emptyDir` mount layout, socket access is isolated strictly within the boundary of the individual Pod.
 
 ### IPC Protocol
 

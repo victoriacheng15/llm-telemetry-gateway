@@ -10,6 +10,7 @@ import urllib.request
 SOCKET_PATH = "/tmp/shared/policy.sock"
 LOG_PATH = "/tmp/shared/gateway.log"
 DIAGNOSTICS_PATH = "/tmp/shared/diagnostics.txt"
+RCA_LOG_PATH = "/tmp/shared/rca.log"
 
 # Pre-compile regex patterns for high-performance string matching
 SSN_REGEX = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
@@ -249,18 +250,14 @@ def check_health():
     ready_ok = False
 
     try:
-        with urllib.request.urlopen(
-            "http://localhost:8080/healthz", timeout=1
-        ) as resp:
+        with urllib.request.urlopen("http://localhost:8080/healthz", timeout=1) as resp:
             if resp.status == 200:
                 health_ok = True
     except Exception:
         pass
 
     try:
-        with urllib.request.urlopen(
-            "http://localhost:8080/readyz", timeout=1
-        ) as resp:
+        with urllib.request.urlopen("http://localhost:8080/readyz", timeout=1) as resp:
             if resp.status == 200:
                 ready_ok = True
     except Exception:
@@ -273,10 +270,10 @@ def detect_anomalies(cpu_util, mem_util, logs, health_ok, ready_ok):
     global http_errors
     anomalies = []
 
-    if cpu_util is not None and cpu_util > 80.0:
+    if cpu_util is not None and cpu_util > 5.0:
         anomalies.append(f"High Host CPU Utilization: {cpu_util:.2f}%")
 
-    if mem_util is not None and mem_util > 80.0:
+    if mem_util is not None and mem_util > 60.0:
         anomalies.append(f"High Host Memory Utilization: {mem_util:.2f}%")
 
     if not health_ok:
@@ -298,7 +295,7 @@ def detect_anomalies(cpu_util, mem_util, logs, health_ok, ready_ok):
             if len(request_latencies) > 100:
                 request_latencies.pop(0)
             if dur > 0.2:
-                anomalies.append(f"High request latency observed: {dur*1000:.1f}ms")
+                anomalies.append(f"High request latency observed: {dur * 1000:.1f}ms")
 
     return anomalies
 
@@ -315,7 +312,7 @@ def build_prompt_context(cpu_util, mem_util, proxy_stats, anomalies):
         f"- Total Requests Processed: {proxy_stats['request_count']}",
         f"- Input Tokens: {proxy_stats['input_tokens']}",
         f"- Output Tokens: {proxy_stats['output_tokens']}",
-        f"- Average Response Duration: {proxy_stats['avg_duration_seconds']*1000:.1f}ms",
+        f"- Average Response Duration: {proxy_stats['avg_duration_seconds'] * 1000:.1f}ms",
     ]
 
     if anomalies:
@@ -326,6 +323,24 @@ def build_prompt_context(cpu_util, mem_util, proxy_stats, anomalies):
 
     lines.append("=====================================")
     return "\n".join(lines)
+
+
+def query_ollama_blocking(prompt):
+    url = "http://ollama.ollama.svc.cluster.local:11434/api/generate"
+    data = json.dumps(
+        {"model": "qwen2.5:0.5b", "prompt": prompt, "stream": False}
+    ).encode("utf-8")
+
+    req = urllib.request.Request(
+        url, data=data, headers={"Content-Type": "application/json"}
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        res_data = json.loads(resp.read().decode("utf-8"))
+        return res_data.get("response", "")
+
+
+async def query_ollama(prompt):
+    return await asyncio.to_thread(query_ollama_blocking, prompt)
 
 
 async def telemetry_evaluation_loop():
@@ -356,9 +371,7 @@ async def telemetry_evaluation_loop():
 
             logs = parse_logs()
             health_ok, ready_ok = check_health()
-            anomalies = detect_anomalies(
-                cpu_util, mem_util, logs, health_ok, ready_ok
-            )
+            anomalies = detect_anomalies(cpu_util, mem_util, logs, health_ok, ready_ok)
 
             latest_context = build_prompt_context(
                 cpu_util, mem_util, proxy_stats, anomalies
@@ -367,6 +380,35 @@ async def telemetry_evaluation_loop():
             # Write diagnostics to file
             with open(DIAGNOSTICS_PATH, "w") as f:
                 f.write(latest_context)
+
+            # RCA Diagnosis using Ollama
+            if anomalies:
+                prompt = (
+                    "You are an AIOps diagnostic agent. Analyze the system telemetry context below and perform a "
+                    "Root Cause Analysis (RCA) to identify which active chaos scenario is happening.\n"
+                    "Choose exactly one of the following scenarios:\n"
+                    '1. "Network Delay" (high request duration/latency)\n'
+                    '2. "Sidecar Process Crash" (healthz/readyz check failing, connection refused)\n'
+                    '3. "Resource Starvation / Stress" (high host CPU or memory utilization)\n'
+                    '4. "Healthy / Nominal" (no anomalies)\n\n'
+                    "System Telemetry Context:\n"
+                    f"{latest_context}\n\n"
+                    "Provide a short, direct natural-language Root Cause Analysis log (max 2 sentences) identifying "
+                    "the active scenario and the primary symptom. Start with '[RCA] '."
+                )
+                try:
+                    rca_response = await query_ollama(prompt)
+                    rca_log = f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}] {rca_response.strip()}"
+                    print(f"[RCA DIAGNOSTICS] {rca_log}")
+                    with open(RCA_LOG_PATH, "a") as f:
+                        f.write(rca_log + "\n")
+                except Exception as e:
+                    print(f"Warning: Failed to query Ollama: {e}")
+            else:
+                rca_log = f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}] [RCA] Nominal system health. No anomalies detected."
+                print(f"[RCA DIAGNOSTICS] {rca_log}")
+                with open(RCA_LOG_PATH, "a") as f:
+                    f.write(rca_log + "\n")
 
         except asyncio.CancelledError:
             break

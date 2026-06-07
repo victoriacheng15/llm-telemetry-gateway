@@ -11,6 +11,7 @@ from internal.sidecar.policy import (
     parse_logs,
     detect_anomalies,
     build_prompt_context,
+    query_ollama,
 )
 
 
@@ -158,16 +159,17 @@ def test_uds_server_lifecycle_cancelled_error(
 def test_get_cpu_utilization():
     # Reset states for clean test
     import internal.sidecar.policy as policy
+
     policy.last_cpu_idle = None
     policy.last_cpu_total = None
 
     metrics_text_1 = (
-        "node_cpu_seconds_total{mode=\"idle\"} 10.0\n"
-        "node_cpu_seconds_total{mode=\"user\"} 10.0\n"
+        'node_cpu_seconds_total{mode="idle"} 10.0\n'
+        'node_cpu_seconds_total{mode="user"} 10.0\n'
     )
     metrics_text_2 = (
-        "node_cpu_seconds_total{mode=\"idle\"} 15.0\n"
-        "node_cpu_seconds_total{mode=\"user\"} 25.0\n"
+        'node_cpu_seconds_total{mode="idle"} 15.0\n'
+        'node_cpu_seconds_total{mode="user"} 25.0\n'
     )
     # First call sets the baseline
     util1 = get_cpu_utilization(metrics_text_1)
@@ -182,8 +184,7 @@ def test_get_cpu_utilization():
 
 def test_get_memory_utilization():
     metrics_text = (
-        "node_memory_MemTotal_bytes 1000\n"
-        "node_memory_MemAvailable_bytes 200\n"
+        "node_memory_MemTotal_bytes 1000\nnode_memory_MemAvailable_bytes 200\n"
     )
     util = get_memory_utilization(metrics_text)
     assert util == 80.0
@@ -206,6 +207,7 @@ def test_get_proxy_metrics():
 @patch("os.path.exists", return_value=True)
 def test_parse_logs(mock_exists):
     import internal.sidecar.policy as policy
+
     policy.log_file_offset = 0
 
     log_content = '{"status": 200, "duration_seconds": 0.05, "msg": "ok"}\n'
@@ -216,7 +218,10 @@ def test_parse_logs(mock_exists):
 
 
 def test_detect_anomalies():
-    logs = [{"status": 500, "msg": "Internal Server Error"}, {"status": 200, "duration_seconds": 0.25}]
+    logs = [
+        {"status": 500, "msg": "Internal Server Error"},
+        {"status": 200, "duration_seconds": 0.25},
+    ]
     anomalies = detect_anomalies(85.0, 90.0, logs, health_ok=False, ready_ok=False)
 
     assert any("High Host CPU" in a for a in anomalies)
@@ -232,7 +237,7 @@ def test_build_prompt_context():
         "request_count": 5,
         "input_tokens": 10,
         "output_tokens": 20,
-        "avg_duration_seconds": 0.05
+        "avg_duration_seconds": 0.05,
     }
     anomalies = ["High Host CPU Utilization: 85.00%"]
     ctx = build_prompt_context(85.0, 50.0, stats, anomalies)
@@ -241,3 +246,15 @@ def test_build_prompt_context():
     assert "System Status: ANOMALOUS" in ctx
     assert "Host CPU Utilization: 85.0%" in ctx
     assert "[ALERT] High Host CPU Utilization: 85.00%" in ctx
+
+
+@patch("urllib.request.urlopen")
+def test_query_ollama(mock_urlopen):
+    mock_response = MagicMock()
+    mock_response.read.return_value = (
+        b'{"response": "[RCA] Simulated Root Cause Analysis result."}'
+    )
+    mock_urlopen.return_value.__enter__.return_value = mock_response
+
+    res = asyncio.run(query_ollama("test prompt"))
+    assert res == "[RCA] Simulated Root Cause Analysis result."
