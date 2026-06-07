@@ -4,12 +4,22 @@ This guide outlines how to manually inject chaos scenarios in the local cluster 
 
 ---
 
-## 📋 Prerequisites
+## 📋 Prerequisites & Ollama Initialization
 
-Ensure all core namespaces and workloads are active and healthy:
+Ensure all core namespaces and workloads are active and healthy. If the workloads are not running, follow the startup instructions in the [k3s Bootstrap Guide](../../k3s/README.md).
+
+Check current pods:
 
 ```bash
 kubectl get pods -A
+```
+
+### Pull the Ollama Model (Required on Redeployment)
+
+Because the Ollama container uses ephemeral storage, the model is wiped whenever the pod/deployment is deleted. You must pull the model each time you redeploy the `ollama` namespace:
+
+```bash
+kubectl exec -n ollama deploy/ollama -- ollama pull qwen2.5:0.5b
 ```
 
 The system requires:
