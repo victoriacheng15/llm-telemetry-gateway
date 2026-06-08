@@ -1,7 +1,9 @@
 # Global Makefile configurations and flags
 MAKEFLAGS += --no-print-directory
 
-.PHONY: all freeze install lint lint-go lint-py lint-md test test-go test-py test-k3s fmt fmt-go fmt-py fmt-md cov cov-go cov-py build-go help
+DOCKER ?= podman
+
+.PHONY: all freeze install lint lint-go lint-py lint-md test test-go test-py test-k3s fmt fmt-go fmt-py fmt-md cov cov-go cov-py build-go build-image deploy scale-down scale-up help
 
 all: lint test fmt
 
@@ -81,12 +83,46 @@ fmt-md: ## Format Markdown files using markdownlint-cli
 	npx markdownlint-cli '**/*.md' --ignore .venv --fix
 
 # ==============================================================================
-# KUBERNETES TARGETS (LINTING)
+# KUBERNETES & CONTAINER TARGETS (LINT, BUILD, DEPLOY)
 # ==============================================================================
 
 lint-k3s: ## Lint Kubernetes manifests using kube-linter
 	@echo "==> Linting Kubernetes manifests..."
 	~/go/bin/kube-linter lint k3s/
+
+build-image: ## Build the custom completions proxy Docker image and import it into k3s
+	@echo "==> Building Docker image..."
+	$(DOCKER) build -t llm-telemetry-gateway:v1.0.0 -f docker/gateway/Dockerfile .
+	@echo "==> Importing Docker image into k3s..."
+	$(DOCKER) save llm-telemetry-gateway:v1.0.0 | sudo k3s ctr images import -
+
+deploy: ## Apply Kubernetes manifests to the cluster
+	@echo "==> Applying bootstrap resources..."
+	kubectl apply -f k3s/bootstrap/
+	@echo "==> Applying telemetry stack..."
+	kubectl apply -f k3s/telemetry/
+	@echo "==> Applying Ollama environment..."
+	kubectl apply -f k3s/ollama/
+	@echo "==> Applying gateway RBAC configuration..."
+	kubectl apply -f k3s/apps/rbac.yaml
+	@echo "==> Applying gateway NetworkPolicy..."
+	kubectl apply -f k3s/apps/network-policy.yaml
+	@echo "==> Applying gateway workload deployment..."
+	sed "s|/opt/llm-telemetry-gateway|$$PWD|g" k3s/apps/deployment.yaml | kubectl apply -f -
+
+scale-down: ## Scale down all sandbox deployments to 0 replicas
+	@echo "==> Scaling down all deployments to 0..."
+	kubectl scale deployment --all -n gateway --replicas=0
+	kubectl scale deployment --all -n telemetry --replicas=0
+	kubectl scale deployment --all -n ollama --replicas=0
+	kubectl scale deployment --all -n chaos-mesh --replicas=0
+
+scale-up: ## Scale up all sandbox deployments to 1 replica
+	@echo "==> Scaling up all deployments to 1..."
+	kubectl scale deployment --all -n gateway --replicas=1
+	kubectl scale deployment --all -n telemetry --replicas=1
+	kubectl scale deployment --all -n ollama --replicas=1
+	kubectl scale deployment --all -n chaos-mesh --replicas=1
 
 
 # ==============================================================================
