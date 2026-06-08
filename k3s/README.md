@@ -14,7 +14,8 @@ k3s/
 │   ├── 01-namespace.yaml              # Core cluster namespaces (gateway, telemetry, ollama)
 │   └── 02-limit-range-telemetry.yaml  # Resource bounds for telemetry namespace
 ├── apps/
-│   └── deployment.yaml                # Co-located Go proxy & Python sidecar workload
+│   ├── deployment.yaml                # Co-located Go proxy & Python sidecar workload
+│   └── rbac.yaml                      # Role & RoleBinding for managing Chaos Mesh resources
 ├── telemetry/
 │   ├── prometheus-infra.yaml          # Pinned Prometheus server configuration
 │   └── telemetry.yaml                 # Pinned OTel Collector configuration
@@ -60,6 +61,7 @@ kubectl apply -f k3s/ollama/
 # 3. Deploy completions proxy gateway workload using dynamic host path
 sed "s|/opt/llm-telemetry-gateway|$PWD|g" k3s/apps/deployment.yaml | kubectl apply -f -
 kubectl apply -f k3s/apps/network-policy.yaml
+kubectl apply -f k3s/apps/rbac.yaml
 
 # 4. Install or update Chaos Mesh controller
 helm repo add chaos-mesh https://charts.chaos-mesh.org
@@ -80,7 +82,7 @@ To guarantee absolute build reproducibility and protect the sandbox from unexpec
 
 | Component | Target Namespace | Image Reference | Lifecycle Phase / Purpose |
 | :--- | :--- | :--- | :--- |
-| **Go Proxy Proxy** | `gateway` | `alpine:3.20` | LTS base image, supported until May 2026. |
+| **Go Proxy Proxy** | `gateway` | `alpine/k8s:1.31.0` | Public image containing Alpine Linux and pre-installed kubectl. |
 | **Python Sidecar** | `gateway` | `python:3.13-slim` | Stable minor runtime release, optimized slim build. |
 | **OTel Collector** | `telemetry` | `otel/opentelemetry-collector-contrib:0.110.0` | Pinned stable minor release with Prometheus metrics export. |
 | **Prometheus DB** | `telemetry` | `prom/prometheus:v2.51.2` | Stable long-term support branch database. |

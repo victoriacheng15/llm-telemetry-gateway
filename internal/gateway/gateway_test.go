@@ -2,9 +2,14 @@ package gateway
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -302,4 +307,341 @@ func TestRun(t *testing.T) {
 
 	// Give the server thread time to stop gracefully
 	time.Sleep(100 * time.Millisecond)
+}
+
+// Helper process for mocking execCommand
+func TestHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+	defer os.Exit(0)
+
+	args := os.Args
+	for len(args) > 0 {
+		if args[0] == "--" {
+			args = args[1:]
+			break
+		}
+		args = args[1:]
+	}
+	if len(args) == 0 {
+		fmt.Fprintf(os.Stderr, "No command\n")
+		os.Exit(2)
+	}
+
+	cmd := args[0]
+	if os.Getenv("MOCK_FAIL") == "1" {
+		fmt.Fprintf(os.Stderr, "mocked error: failed to run %s\n", cmd)
+		os.Exit(1)
+	}
+
+	fmt.Fprintf(os.Stdout, "mocked output for %s %s\n", cmd, strings.Join(args[1:], " "))
+}
+
+func fakeExecCommand(command string, args ...string) *exec.Cmd {
+	cs := []string{"-test.run=TestHelperProcess", "--", command}
+	cs = append(cs, args...)
+	cmd := exec.Command(os.Args[0], cs...)
+	cmd.Env = []string{
+		"GO_WANT_HELPER_PROCESS=1",
+		"MOCK_FAIL=" + os.Getenv("MOCK_FAIL"),
+	}
+	return cmd
+}
+
+func TestHandleChaosStress(t *testing.T) {
+	oldExec := execCommand
+	execCommand = fakeExecCommand
+	defer func() { execCommand = oldExec }()
+
+	tests := []struct {
+		name           string
+		method         string
+		mockFail       bool
+		expectedStatus int
+		expectedBody   string
+	}{
+		{
+			name:           "POST success",
+			method:         http.MethodPost,
+			expectedStatus: http.StatusOK,
+			expectedBody:   `mocked output for kubectl apply -f /app/k3s/chaos-mesh/node-stress.yaml`,
+		},
+		{
+			name:           "DELETE success",
+			method:         http.MethodDelete,
+			expectedStatus: http.StatusOK,
+			expectedBody:   `mocked output for kubectl delete -f /app/k3s/chaos-mesh/node-stress.yaml`,
+		},
+		{
+			name:           "OPTIONS success",
+			method:         http.MethodOptions,
+			expectedStatus: http.StatusOK,
+			expectedBody:   "",
+		},
+		{
+			name:           "Method Not Allowed",
+			method:         http.MethodGet,
+			expectedStatus: http.StatusMethodNotAllowed,
+			expectedBody:   "",
+		},
+		{
+			name:           "Command failure",
+			method:         http.MethodPost,
+			mockFail:       true,
+			expectedStatus: http.StatusInternalServerError,
+			expectedBody:   `error`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.mockFail {
+				t.Setenv("MOCK_FAIL", "1")
+			} else {
+				t.Setenv("MOCK_FAIL", "0")
+			}
+
+			req := httptest.NewRequest(tt.method, "/api/chaos/stress", nil)
+			rr := httptest.NewRecorder()
+
+			HandleChaosStress(rr, req)
+
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, rr.Code)
+			}
+			if tt.expectedBody != "" && !strings.Contains(rr.Body.String(), tt.expectedBody) {
+				t.Errorf("expected body to contain %q, got %q", tt.expectedBody, rr.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleChaosNetwork(t *testing.T) {
+	oldExec := execCommand
+	execCommand = fakeExecCommand
+	defer func() { execCommand = oldExec }()
+
+	tests := []struct {
+		name           string
+		method         string
+		mockFail       bool
+		expectedStatus int
+		expectedBody   string
+	}{
+		{
+			name:           "POST success",
+			method:         http.MethodPost,
+			expectedStatus: http.StatusOK,
+			expectedBody:   `mocked output for kubectl apply -f /app/k3s/chaos-mesh/network-delay.yaml`,
+		},
+		{
+			name:           "DELETE success",
+			method:         http.MethodDelete,
+			expectedStatus: http.StatusOK,
+			expectedBody:   `mocked output for kubectl delete -f /app/k3s/chaos-mesh/network-delay.yaml`,
+		},
+		{
+			name:           "OPTIONS success",
+			method:         http.MethodOptions,
+			expectedStatus: http.StatusOK,
+			expectedBody:   "",
+		},
+		{
+			name:           "Method Not Allowed",
+			method:         http.MethodGet,
+			expectedStatus: http.StatusMethodNotAllowed,
+			expectedBody:   "",
+		},
+		{
+			name:           "Command failure",
+			method:         http.MethodPost,
+			mockFail:       true,
+			expectedStatus: http.StatusInternalServerError,
+			expectedBody:   `error`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.mockFail {
+				t.Setenv("MOCK_FAIL", "1")
+			} else {
+				t.Setenv("MOCK_FAIL", "0")
+			}
+
+			req := httptest.NewRequest(tt.method, "/api/chaos/network", nil)
+			rr := httptest.NewRecorder()
+
+			HandleChaosNetwork(rr, req)
+
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, rr.Code)
+			}
+			if tt.expectedBody != "" && !strings.Contains(rr.Body.String(), tt.expectedBody) {
+				t.Errorf("expected body to contain %q, got %q", tt.expectedBody, rr.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleDiagnostics(t *testing.T) {
+	tempDir := t.TempDir()
+	diagFile := filepath.Join(tempDir, "diagnostics.txt")
+
+	oldPath := DiagnosticsPath
+	DiagnosticsPath = diagFile
+	defer func() { DiagnosticsPath = oldPath }()
+
+	// Test 1: File not exist
+	req := httptest.NewRequest("GET", "/api/diagnostics", nil)
+	rr := httptest.NewRecorder()
+	HandleDiagnostics(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+	}
+	if rr.Body.String() != "Diagnostics not yet available." {
+		t.Errorf("expected body 'Diagnostics not yet available.', got %q", rr.Body.String())
+	}
+
+	// Test 2: File exists
+	err := os.WriteFile(diagFile, []byte("metrics payload"), 0644)
+	if err != nil {
+		t.Fatalf("failed to write mock diagnostics: %v", err)
+	}
+
+	req = httptest.NewRequest("GET", "/api/diagnostics", nil)
+	rr = httptest.NewRecorder()
+	HandleDiagnostics(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+	}
+	if rr.Body.String() != "metrics payload" {
+		t.Errorf("expected body 'metrics payload', got %q", rr.Body.String())
+	}
+
+	// Test 3: Method Not Allowed
+	req = httptest.NewRequest("POST", "/api/diagnostics", nil)
+	rr = httptest.NewRecorder()
+	HandleDiagnostics(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected status %d, got %d", http.StatusMethodNotAllowed, rr.Code)
+	}
+}
+
+func TestHandleRCALogStream(t *testing.T) {
+	tempDir := t.TempDir()
+	logFile := filepath.Join(tempDir, "rca.log")
+
+	oldPath := RCALogPath
+	RCALogPath = logFile
+	defer func() { RCALogPath = oldPath }()
+
+	err := os.WriteFile(logFile, []byte("line 1\nline 2\n"), 0644)
+	if err != nil {
+		t.Fatalf("failed to write mock log: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest("GET", "/api/logs/stream", nil).WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	// Run handler in goroutine and cancel context after 50ms to exit the loop
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	HandleRCALogStream(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+	}
+
+	contentType := rr.Header().Get("Content-Type")
+	if contentType != "text/event-stream" {
+		t.Errorf("expected Content-Type text/event-stream, got %q", contentType)
+	}
+
+	body := rr.Body.String()
+	if !strings.Contains(body, "data: line 1") || !strings.Contains(body, "data: line 2") {
+		t.Errorf("expected streamed data, got %q", body)
+	}
+}
+
+func TestHandleMaskTest(t *testing.T) {
+	// Set up UDS Mock Server
+	tempDir := t.TempDir()
+	testSocket := filepath.Join(tempDir, "test_mask.sock")
+
+	listener, err := net.Listen("unix", testSocket)
+	if err != nil {
+		t.Fatalf("Failed to create mock UDS listener: %v", err)
+	}
+	defer listener.Close()
+
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				buf := make([]byte, 1024)
+				n, err := c.Read(buf)
+				if err != nil {
+					return
+				}
+				payload := string(buf[:n])
+				var response string
+				if strings.Contains(payload, "123-45-6789") {
+					response = "My SSN is [REDACTED_SSN]\n"
+				} else {
+					response = payload
+				}
+				c.Write([]byte(response))
+			}(conn)
+		}
+	}()
+
+	oldSocket := SocketPath
+	SocketPath = testSocket
+	defer func() { SocketPath = oldSocket }()
+
+	// Test 1: Successful Masking
+	reqPayload := `{"prompt": "My SSN is 123-45-6789"}`
+	req := httptest.NewRequest("POST", "/api/mask", bytes.NewBufferString(reqPayload))
+	rr := httptest.NewRecorder()
+
+	HandleMaskTest(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+	}
+
+	var res MaskResponse
+	err = json.Unmarshal(rr.Body.Bytes(), &res)
+	if err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if res.Masked != "My SSN is [REDACTED_SSN]" {
+		t.Errorf("expected masked 'My SSN is [REDACTED_SSN]', got %q", res.Masked)
+	}
+
+	// Test 2: Invalid JSON
+	req = httptest.NewRequest("POST", "/api/mask", bytes.NewBufferString("invalid json"))
+	rr = httptest.NewRecorder()
+	HandleMaskTest(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
+	}
+
+	// Test 3: Method Not Allowed
+	req = httptest.NewRequest("GET", "/api/mask", nil)
+	rr = httptest.NewRecorder()
+	HandleMaskTest(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected status %d, got %d", http.StatusMethodNotAllowed, rr.Code)
+	}
 }

@@ -3,12 +3,14 @@ package gateway
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -23,13 +25,17 @@ import (
 )
 
 var (
-	SocketPath = "/tmp/shared/policy.sock"
-	SigChan    = make(chan os.Signal, 1)
+	SocketPath      = "/tmp/shared/policy.sock"
+	DiagnosticsPath = "/tmp/shared/diagnostics.txt"
+	RCALogPath      = "/tmp/shared/rca.log"
+	SigChan         = make(chan os.Signal, 1)
 
 	meter         = otel.Meter("gateway")
 	inputCounter  metric.Int64Counter
 	outputCounter metric.Int64Counter
 	durationHist  metric.Float64Histogram
+
+	execCommand = exec.Command
 )
 
 func init() {
@@ -104,6 +110,11 @@ func Run(serverAddr string) {
 	mux.HandleFunc("/v1/chat/completions", HandleCompletions)
 	mux.HandleFunc("/healthz", HandleHealthz)
 	mux.HandleFunc("/readyz", HandleReadyz)
+	mux.HandleFunc("/api/chaos/stress", HandleChaosStress)
+	mux.HandleFunc("/api/chaos/network", HandleChaosNetwork)
+	mux.HandleFunc("/api/diagnostics", HandleDiagnostics)
+	mux.HandleFunc("/api/logs/stream", HandleRCALogStream)
+	mux.HandleFunc("/api/mask", HandleMaskTest)
 
 	srv := &http.Server{
 		Addr:    serverAddr,
@@ -280,4 +291,203 @@ func HandleReadyz(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status": "ready"}`))
+}
+
+func HandleChaosStress(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	var cmdArgs []string
+	if r.Method == http.MethodPost {
+		cmdArgs = []string{"apply", "-f", "/app/k3s/chaos-mesh/node-stress.yaml"}
+	} else if r.Method == http.MethodDelete {
+		cmdArgs = []string{"delete", "-f", "/app/k3s/chaos-mesh/node-stress.yaml"}
+	} else {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	cmd := execCommand("kubectl", cmdArgs...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		slog.Error("Failed to manage stress chaos", "error", err, "output", string(out))
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(w, `{"error": "%s", "output": %q}`, err.Error(), string(out))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, `{"status": "success", "output": %q}`, string(out))
+}
+
+func HandleChaosNetwork(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	var cmdArgs []string
+	if r.Method == http.MethodPost {
+		cmdArgs = []string{"apply", "-f", "/app/k3s/chaos-mesh/network-delay.yaml"}
+	} else if r.Method == http.MethodDelete {
+		cmdArgs = []string{"delete", "-f", "/app/k3s/chaos-mesh/network-delay.yaml"}
+	} else {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	cmd := execCommand("kubectl", cmdArgs...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		slog.Error("Failed to manage network chaos", "error", err, "output", string(out))
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(w, `{"error": "%s", "output": %q}`, err.Error(), string(out))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, `{"status": "success", "output": %q}`, string(out))
+}
+
+func HandleDiagnostics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	data, err := os.ReadFile(DiagnosticsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			w.Write([]byte("Diagnostics not yet available."))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	w.Write(data)
+}
+
+func HandleRCALogStream(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	file, err := os.Open(RCALogPath)
+	if err != nil {
+		file, err = os.OpenFile(RCALogPath, os.O_CREATE|os.O_RDONLY, 0644)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	defer file.Close()
+
+	reader := bufio.NewReader(file)
+	for {
+		line, err := reader.ReadString('\n')
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			break
+		}
+		fmt.Fprintf(w, "data: %s\n\n", strings.TrimSuffix(line, "\n"))
+		flusher.Flush()
+	}
+
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			for {
+				line, err := reader.ReadString('\n')
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					return
+				}
+				fmt.Fprintf(w, "data: %s\n\n", strings.TrimSuffix(line, "\n"))
+				flusher.Flush()
+			}
+		}
+	}
+}
+
+type MaskRequest struct {
+	Prompt string `json:"prompt"`
+}
+
+type MaskResponse struct {
+	Masked string `json:"masked"`
+}
+
+func HandleMaskTest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req MaskRequest
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error": "Invalid request JSON"}`))
+		return
+	}
+
+	prompt := req.Prompt
+	if !strings.HasSuffix(prompt, "\n") {
+		prompt += "\n"
+	}
+
+	response, err := DialAndSend(SocketPath, prompt)
+	if err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintf(w, `{"error": "PII policy engine unreachable: %v"}`, err)
+		return
+	}
+
+	res := MaskResponse{
+		Masked: strings.TrimSuffix(response, "\n"),
+	}
+	json.NewEncoder(w).Encode(res)
 }

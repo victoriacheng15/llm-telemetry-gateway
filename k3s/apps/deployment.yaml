@@ -18,7 +18,9 @@ spec:
       containers:
       # 1. Go Proxy Data Plane Container
       - name: gateway
-        image: alpine:3.20
+        image: alpine/k8s:1.31.0
+        securityContext:
+          runAsUser: 0
         command: ["sh", "-c", "/app/bin/gateway 2>&1 | tee /tmp/shared/gateway.log"]
         env:
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
