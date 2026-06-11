@@ -115,6 +115,7 @@ func Run(serverAddr string) {
 	mux.HandleFunc("/api/diagnostics", HandleDiagnostics)
 	mux.HandleFunc("/api/logs/stream", HandleRCALogStream)
 	mux.HandleFunc("/api/mask", HandleMaskTest)
+	mux.HandleFunc("/api/limits", HandleLimits)
 	mux.Handle("/console/", http.StripPrefix("/console/", http.FileServer(http.Dir("internal/web/console"))))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
@@ -390,6 +391,32 @@ func HandleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write(data)
+}
+
+func HandleLimits(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	cpuLimit := os.Getenv("LIMITS_CPU")
+	if cpuLimit == "" {
+		cpuLimit = "500m"
+	}
+	memLimit := os.Getenv("LIMITS_MEMORY")
+	if memLimit == "" {
+		memLimit = "512Mi"
+	}
+
+	response := map[string]string{
+		"cpu":    cpuLimit,
+		"memory": memLimit,
+	}
+
+	json.NewEncoder(w).Encode(response)
 }
 
 func HandleRCALogStream(w http.ResponseWriter, r *http.Request) {
