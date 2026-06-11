@@ -27,6 +27,16 @@ spec:
         env:
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: "http://otel-collector.telemetry.svc.cluster.local:4317"
+        - name: LIMITS_CPU
+          valueFrom:
+            resourceFieldRef:
+              containerName: gateway
+              resource: limits.cpu
+        - name: LIMITS_MEMORY
+          valueFrom:
+            resourceFieldRef:
+              containerName: gateway
+              resource: limits.memory
         volumeMounts:
         - name: shared-uds
           mountPath: /tmp/shared

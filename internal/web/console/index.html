@@ -9,12 +9,98 @@
 <body>
     <header>
         <h1>LLM Telemetry Gateway - IDP Console</h1>
+        <aside class="header-meta">
+            <p class="status-indicator">
+                <span class="status-dot"></span>
+                <span>Status: Active</span>
+            </p>
+            <a href="http://localhost:31032" target="_blank" class="chaos-link">Chaos Dashboard</a>
+        </aside>
     </header>
+
     <main>
-        <p>Console skeleton initialized.</p>
+        <!-- Telemetry Metrics -->
+        <section class="metrics-section" aria-label="System Metrics">
+            <h2 class="metrics-title">System Telemetry Metrics</h2>
+            <article class="metric-card">
+                <h3 class="metric-title">CPU Usage</h3>
+                <span class="metric-value" id="metric-cpu">0%</span>
+                <span class="metric-limit" id="limit-cpu">Limit: 500m</span>
+                <figure class="metric-chart" id="chart-cpu"></figure>
+            </article>
+
+            <article class="metric-card">
+                <h3 class="metric-title">Memory Usage</h3>
+                <span class="metric-value" id="metric-memory">0 MB</span>
+                <span class="metric-limit" id="limit-memory">Limit: 512Mi</span>
+                <figure class="metric-chart" id="chart-memory"></figure>
+            </article>
+
+            <article class="metric-card">
+                <h3 class="metric-title">Request Latency</h3>
+                <span class="metric-value" id="metric-latency">0 ms</span>
+                <span class="metric-limit">Target: &lt; 200ms</span>
+                <figure class="metric-chart" id="chart-latency"></figure>
+            </article>
+        </section>
+
+        <!-- Incident Observability Logs -->
+        <section class="logs-section" aria-label="AIOps Logs">
+            <h2 class="logs-title">AIOps incident observability logs (streaming)</h2>
+            <pre class="terminal" id="log-terminal"></pre>
+        </section>
+
+        <!-- PII Redaction Playground -->
+        <section class="playground-section" aria-label="PII Masking Playground">
+            <h2 class="playground-title">PII Masking Playground</h2>
+            <form class="playground-grid">
+                <label class="input-group">
+                    <span>Raw Input Prompt</span>
+                    <textarea id="raw-prompt" class="playground-textarea" placeholder="Type a prompt with PII (e.g. My SSN is 123-45-6789)..."></textarea>
+                </label>
+                <label class="input-group">
+                    <span>Masked Output</span>
+                    <textarea id="masked-prompt" class="playground-textarea" readonly placeholder="Redacted output will appear here..."></textarea>
+                </label>
+            </form>
+            <button type="button" class="btn-primary" id="btn-redact">Test Redaction</button>
+        </section>
     </main>
+
     <script>
-        console.log('IDP Console skeleton loaded.');
+        async function fetchLimits() {
+            try {
+                const response = await fetch('/api/limits');
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    let cpuText = data.cpu;
+                    if (!isNaN(cpuText)) {
+                        cpuText = `${cpuText} Core` + (cpuText !== '1' ? 's' : '');
+                    }
+                    
+                    let memText = data.memory;
+                    const bytes = parseInt(data.memory, 10);
+                    if (!isNaN(bytes)) {
+                        if (bytes >= 1024 * 1024 * 1024) {
+                            memText = `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
+                        } else {
+                            memText = `${(bytes / (1024 * 1024)).toFixed(0)} MiB`;
+                        }
+                    }
+
+                    document.getElementById('limit-cpu').textContent = `Limit: ${cpuText}`;
+                    document.getElementById('limit-memory').textContent = `Limit: ${memText}`;
+                }
+            } catch (err) {
+                console.error('Failed to fetch resource limits:', err);
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            fetchLimits();
+            console.log('IDP Console skeleton loaded.');
+        });
     </script>
 </body>
 </html>
