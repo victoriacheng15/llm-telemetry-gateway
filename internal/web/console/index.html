@@ -20,8 +20,17 @@
 
     <main>
         <!-- Telemetry Metrics -->
-        <section class="metrics-section" aria-label="System Metrics">
-            <h2 class="metrics-title">System Telemetry Metrics</h2>
+        <section class="metrics-section" aria-label="Pod Metrics">
+            <header class="metrics-header">
+                <h2 class="metrics-title">Pod Telemetry Metrics</h2>
+                <select id="metrics-range" aria-label="Time Range">
+                    <option value="15m" selected>Past 15 min</option>
+                    <option value="30m">Past 30 min</option>
+                    <option value="1h">Past 1 hour</option>
+                    <option value="3h">Past 3 hours</option>
+                </select>
+            </header>
+            
             <article class="metric-card">
                 <h3 class="metric-title">CPU Usage</h3>
                 <span class="metric-value" id="metric-cpu">0%</span>
@@ -37,16 +46,37 @@
             </article>
 
             <article class="metric-card">
-                <h3 class="metric-title">Request Latency</h3>
-                <span class="metric-value" id="metric-latency">0 ms</span>
+                <h3 class="metric-title">Token Throughput</h3>
+                <span class="metric-value" id="metric-tokens">0 t/s</span>
+                <span class="metric-limit" id="limit-tokens">Limit: None</span>
+                <figure class="metric-chart" id="chart-tokens"></figure>
+            </article>
+
+            <article class="metric-card">
+                <h3 class="metric-title">Average Latency</h3>
+                <span class="metric-value" id="metric-latency-avg">0 ms</span>
                 <span class="metric-limit">Target: &lt; 200ms</span>
-                <figure class="metric-chart" id="chart-latency"></figure>
+                <figure class="metric-chart" id="chart-latency-avg"></figure>
+            </article>
+
+            <article class="metric-card">
+                <h3 class="metric-title">p95 Latency</h3>
+                <span class="metric-value" id="metric-latency-p95">0 ms</span>
+                <span class="metric-limit">Target: &lt; 350ms</span>
+                <figure class="metric-chart" id="chart-latency-p95"></figure>
+            </article>
+
+            <article class="metric-card">
+                <h3 class="metric-title">p99 Latency</h3>
+                <span class="metric-value" id="metric-latency-p99">0 ms</span>
+                <span class="metric-limit">Target: &lt; 500ms</span>
+                <figure class="metric-chart" id="chart-latency-p99"></figure>
             </article>
         </section>
 
         <!-- Incident Observability Logs -->
         <section class="logs-section" aria-label="AIOps Logs">
-            <h2 class="logs-title">AIOps incident observability logs (streaming)</h2>
+            <h2 class="logs-title">AIOps Incident Observability Logs (Streaming)</h2>
             <pre class="terminal" id="log-terminal"></pre>
         </section>
 
