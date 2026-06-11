@@ -115,6 +115,14 @@ func Run(serverAddr string) {
 	mux.HandleFunc("/api/diagnostics", HandleDiagnostics)
 	mux.HandleFunc("/api/logs/stream", HandleRCALogStream)
 	mux.HandleFunc("/api/mask", HandleMaskTest)
+	mux.Handle("/console/", http.StripPrefix("/console/", http.FileServer(http.Dir("internal/web/console"))))
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			http.Redirect(w, r, "/console/", http.StatusTemporaryRedirect)
+			return
+		}
+		http.NotFound(w, r)
+	})
 
 	srv := &http.Server{
 		Addr:    serverAddr,
