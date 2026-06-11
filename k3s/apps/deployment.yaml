@@ -15,6 +15,7 @@ spec:
       labels:
         app: gateway
     spec:
+      serviceAccountName: gateway-chaos-manager
       containers:
       # 1. Go Proxy Data Plane Container
       - name: gateway
