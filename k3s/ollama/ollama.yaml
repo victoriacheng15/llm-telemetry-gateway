@@ -27,6 +27,13 @@ spec:
           limits:
             cpu: "4"
             memory: 8Gi
+        volumeMounts:
+        - name: ollama-volume
+          mountPath: /root/.ollama
+      volumes:
+      - name: ollama-volume
+        persistentVolumeClaim:
+          claimName: ollama-storage
 ---
 apiVersion: v1
 kind: Service
@@ -39,3 +46,15 @@ spec:
     targetPort: 11434
   selector:
     app: ollama
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-storage
+  namespace: ollama
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
