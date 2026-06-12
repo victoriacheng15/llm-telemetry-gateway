@@ -1,6 +1,7 @@
 import asyncio
 from functools import wraps
 import json
+import multiprocessing
 import os
 import re
 import signal
@@ -24,6 +25,29 @@ log_file_offset = 0
 request_latencies = []
 http_errors = 0
 latest_context = ""
+LAST_SEEN_PATH = "/tmp/shared/sidecar_last_seen"
+last_restart_time = None
+
+
+def check_container_restart():
+    global last_restart_time
+    if os.path.exists(LAST_SEEN_PATH):
+        try:
+            with open(LAST_SEEN_PATH, "r") as f:
+                last_seen = float(f.read().strip())
+            last_restart_time = time.time()
+            print(f"Container restart detected! Last seen: {last_seen}")
+        except Exception:
+            pass
+    update_last_seen()
+
+
+def update_last_seen():
+    try:
+        with open(LAST_SEEN_PATH, "w") as f:
+            f.write(str(time.time()))
+    except Exception:
+        pass
 
 
 def uds_lifecycle_handler(func):
@@ -109,70 +133,110 @@ def fetch_metrics():
         return response.read().decode("utf-8")
 
 
-def get_cpu_utilization(metrics_text):
-    global last_cpu_idle, last_cpu_total
-
-    # Parse node_cpu_seconds_total
-    idle_lines = [
-        line
-        for line in metrics_text.split("\n")
-        if line.startswith("node_cpu_seconds_total") and 'mode="idle"' in line
-    ]
-    total_lines = [
-        line
-        for line in metrics_text.split("\n")
-        if line.startswith("node_cpu_seconds_total")
-    ]
-
-    idle_sum = 0.0
-    for line in idle_lines:
-        parts = line.rsplit(None, 1)
-        if len(parts) == 2:
-            try:
-                idle_sum += float(parts[1])
-            except ValueError:
-                pass
-
-    total_sum = 0.0
-    for line in total_lines:
-        parts = line.rsplit(None, 1)
-        if len(parts) == 2:
-            try:
-                total_sum += float(parts[1])
-            except ValueError:
-                pass
-
-    if last_cpu_idle is not None and last_cpu_total is not None:
-        delta_idle = idle_sum - last_cpu_idle
-        delta_total = total_sum - last_cpu_total
-        if delta_total > 0:
-            cpu_util = (1.0 - (delta_idle / delta_total)) * 100.0
-            last_cpu_idle = idle_sum
-            last_cpu_total = total_sum
-            return cpu_util
-
-    last_cpu_idle = idle_sum
-    last_cpu_total = total_sum
-    return None
+last_cpu_usage = None
+last_cpu_time = None
 
 
-def get_memory_utilization(metrics_text):
-    total = None
-    available = None
-    for line in metrics_text.split("\n"):
-        if line.startswith("node_memory_MemTotal_bytes"):
-            parts = line.rsplit(None, 1)
-            if len(parts) == 2:
-                total = float(parts[1])
-        elif line.startswith("node_memory_MemAvailable_bytes"):
-            parts = line.rsplit(None, 1)
-            if len(parts) == 2:
-                available = float(parts[1])
+def get_cpu_utilization():
+    global last_cpu_usage, last_cpu_time
 
-    if total and available:
-        used = total - available
-        return (used / total) * 100.0
-    return None
+    cpu_ns = None
+    try:
+        with open("/sys/fs/cgroup/cpu.stat", "r") as f:
+            for line in f:
+                if line.startswith("usage_usec"):
+                    cpu_ns = int(line.split()[1]) * 1000
+    except Exception:
+        pass
+    if cpu_ns is None:
+        try:
+            with open("/sys/fs/cgroup/cpuacct/cpuacct.usage", "r") as f:
+                cpu_ns = int(f.read().strip())
+        except Exception:
+            pass
+    if cpu_ns is None:
+        try:
+            with open("/proc/self/stat", "r") as f:
+                parts = f.read().split(")")
+                fields = parts[1].split()
+                utime = int(fields[11])
+                stime = int(fields[12])
+                cpu_ns = (utime + stime) * 10000000
+        except Exception:
+            return None
+
+    now = time.time()
+    cpu_util = None
+    if last_cpu_usage is not None and last_cpu_time is not None:
+        delta_ns = cpu_ns - last_cpu_usage
+        delta_time = (now - last_cpu_time) * 1e9
+        if delta_time > 0 and delta_ns >= 0:
+            limit_str = os.getenv("LIMITS_CPU", "")
+            limit_cores = 1.0
+            if "m" in limit_str:
+                try:
+                    limit_cores = float(limit_str.replace("m", "")) / 1000.0
+                except Exception:
+                    limit_cores = float(multiprocessing.cpu_count())
+            elif limit_str:
+                try:
+                    limit_cores = float(limit_str)
+                except Exception:
+                    limit_cores = float(multiprocessing.cpu_count())
+            else:
+                limit_cores = float(multiprocessing.cpu_count())
+
+            cpu_util = (delta_ns / delta_time) * 100.0 / limit_cores
+            if cpu_util > 100.0:
+                cpu_util = 100.0
+
+    last_cpu_usage = cpu_ns
+    last_cpu_time = now
+    return cpu_util
+
+
+def get_memory_utilization():
+    mem_bytes = None
+    try:
+        with open("/sys/fs/cgroup/memory.current", "r") as f:
+            mem_bytes = int(f.read().strip())
+    except Exception:
+        pass
+    if mem_bytes is None:
+        try:
+            with open("/sys/fs/cgroup/memory/memory.usage_in_bytes", "r") as f:
+                mem_bytes = int(f.read().strip())
+        except Exception:
+            pass
+    if mem_bytes is None:
+        try:
+            with open("/proc/self/status", "r") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        mem_bytes = int(line.split()[1]) * 1024
+        except Exception:
+            return None
+
+    limit_str = os.getenv("LIMITS_MEMORY", "")
+    limit_bytes = 512.0 * 1024 * 1024
+    if limit_str:
+        match = re.match(
+            r"^(\d+(?:\.\d+)?)\s*([KMGT]i?B?|B)?$", limit_str, re.IGNORECASE
+        )
+        if match:
+            val = float(match.group(1))
+            unit = (match.group(2) or "").upper()
+            match unit[:1]:
+                case "G":
+                    limit_bytes = val * 1024 * 1024 * 1024
+                case "M":
+                    limit_bytes = val * 1024 * 1024
+                case "K":
+                    limit_bytes = val * 1024
+                case _:
+                    limit_bytes = val
+
+    return (mem_bytes / limit_bytes) * 100.0
 
 
 def get_proxy_metrics(metrics_text):
@@ -266,15 +330,27 @@ def check_health():
     return health_ok, ready_ok
 
 
-def detect_anomalies(cpu_util, mem_util, logs, health_ok, ready_ok):
-    global http_errors
+def detect_anomalies(
+    cpu_util, mem_util, logs, health_ok, ready_ok, network_latency=0.0
+):
+    global last_restart_time, http_errors
     anomalies = []
 
-    if cpu_util is not None and cpu_util > 5.0:
-        anomalies.append(f"High Host CPU Utilization: {cpu_util:.2f}%")
+    if last_restart_time is not None and (time.time() - last_restart_time) < 30.0:
+        anomalies.append(
+            "Sidecar container restart detected (potential process crash or kill)"
+        )
 
-    if mem_util is not None and mem_util > 60.0:
-        anomalies.append(f"High Host Memory Utilization: {mem_util:.2f}%")
+    if cpu_util is not None and cpu_util > 80.0:
+        anomalies.append(f"High Pod CPU Utilization: {cpu_util:.2f}%")
+
+    if mem_util is not None and mem_util > 80.0:
+        anomalies.append(f"High Pod Memory Utilization: {mem_util:.2f}%")
+
+    if network_latency > 0.2:
+        anomalies.append(
+            f"High outbound network latency: {network_latency * 1000:.1f}ms"
+        )
 
     if not health_ok:
         anomalies.append("Go Proxy healthz check failed")
@@ -282,6 +358,10 @@ def detect_anomalies(cpu_util, mem_util, logs, health_ok, ready_ok):
         anomalies.append("Go Proxy readyz check failed (PII policy engine unreachable)")
 
     for log in logs:
+        msg = log.get("msg", "")
+        if "PII policy engine unreachable" in msg or "Readiness check failed" in msg:
+            anomalies.append(f"Go Proxy reported: {msg}")
+
         status = log.get("status")
         if status and status >= 500:
             http_errors += 1
@@ -307,8 +387,8 @@ def build_prompt_context(cpu_util, mem_util, proxy_stats, anomalies):
         f"System Status: {'ANOMALOUS' if anomalies else 'HEALTHY'}",
         "",
         "Metrics Snapshot:",
-        f"- Host CPU Utilization: {f'{cpu_util:.1f}%' if cpu_util is not None else 'N/A'}",
-        f"- Host Memory Utilization: {f'{mem_util:.1f}%' if mem_util is not None else 'N/A'}",
+        f"- Pod CPU Utilization: {f'{cpu_util:.1f}%' if cpu_util is not None else 'N/A'}",
+        f"- Pod Memory Utilization: {f'{mem_util:.1f}%' if mem_util is not None else 'N/A'}",
         f"- Total Requests Processed: {proxy_stats['request_count']}",
         f"- Input Tokens: {proxy_stats['input_tokens']}",
         f"- Output Tokens: {proxy_stats['output_tokens']}",
@@ -348,16 +428,21 @@ async def telemetry_evaluation_loop():
     # Wait a bit on startup for metrics servers to initialize
     await asyncio.sleep(5)
     print("Telemetry evaluation loop started.")
+    check_container_restart()
     while True:
         try:
+            update_last_seen()
             metrics_text = ""
+            metrics_latency = 0.0
             try:
+                start_t = time.time()
                 metrics_text = fetch_metrics()
+                metrics_latency = time.time() - start_t
             except Exception as e:
                 print(f"Warning: Failed to fetch metrics: {e}")
 
-            cpu_util = get_cpu_utilization(metrics_text) if metrics_text else None
-            mem_util = get_memory_utilization(metrics_text) if metrics_text else None
+            cpu_util = get_cpu_utilization()
+            mem_util = get_memory_utilization()
             proxy_stats = (
                 get_proxy_metrics(metrics_text)
                 if metrics_text
@@ -371,7 +456,9 @@ async def telemetry_evaluation_loop():
 
             logs = parse_logs()
             health_ok, ready_ok = check_health()
-            anomalies = detect_anomalies(cpu_util, mem_util, logs, health_ok, ready_ok)
+            anomalies = detect_anomalies(
+                cpu_util, mem_util, logs, health_ok, ready_ok, metrics_latency
+            )
 
             latest_context = build_prompt_context(
                 cpu_util, mem_util, proxy_stats, anomalies
@@ -389,7 +476,7 @@ async def telemetry_evaluation_loop():
                     "Choose exactly one of the following scenarios:\n"
                     '1. "Network Delay" (high request duration/latency)\n'
                     '2. "Sidecar Process Crash" (healthz/readyz check failing, connection refused)\n'
-                    '3. "Resource Starvation / Stress" (high host CPU or memory utilization)\n'
+                    '3. "Resource Starvation / Stress" (high pod CPU or memory utilization)\n'
                     '4. "Healthy / Nominal" (no anomalies)\n\n'
                     "System Telemetry Context:\n"
                     f"{latest_context}\n\n"
@@ -405,7 +492,7 @@ async def telemetry_evaluation_loop():
                 except Exception as e:
                     print(f"Warning: Failed to query Ollama: {e}")
             else:
-                rca_log = f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}] [RCA] Nominal system health. No anomalies detected."
+                rca_log = f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}] INFO: Nominal system health. No anomalies detected."
                 print(f"[RCA DIAGNOSTICS] {rca_log}")
                 with open(RCA_LOG_PATH, "a") as f:
                     f.write(rca_log + "\n")

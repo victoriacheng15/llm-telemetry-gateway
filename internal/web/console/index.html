@@ -77,7 +77,7 @@
         <!-- Incident Observability Logs -->
         <section class="logs-section" aria-label="AIOps Logs">
             <h2 class="logs-title">AIOps Incident Observability Logs (Streaming)</h2>
-            <pre class="terminal" id="log-terminal"></pre>
+            <ol class="terminal" id="log-terminal"></ol>
         </section>
 
         <!-- PII Redaction Playground -->
@@ -98,6 +98,8 @@
     </main>
 
     <script>
+        let memLimit = 512 * 1024 * 1024; // fallback
+
         async function fetchLimits() {
             try {
                 const response = await fetch('/api/limits');
@@ -112,6 +114,7 @@
                     let memText = data.memory;
                     const bytes = parseInt(data.memory, 10);
                     if (!isNaN(bytes)) {
+                        memLimit = bytes;
                         if (bytes >= 1024 * 1024 * 1024) {
                             memText = `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
                         } else {
@@ -127,9 +130,192 @@
             }
         }
 
-        window.addEventListener('DOMContentLoaded', () => {
-            fetchLimits();
-            console.log('IDP Console skeleton loaded.');
+        async function fetchMetrics() {
+            const rangeSelect = document.getElementById('metrics-range');
+            const range = rangeSelect ? rangeSelect.value : '15m';
+            try {
+                const response = await fetch(`/api/metrics?range=${range}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    // Update text values
+                    document.getElementById('metric-cpu').textContent = `${data.cpu_usage.toFixed(1)}%`;
+                    document.getElementById('metric-memory').textContent = formatBytes(data.memory_usage);
+                    document.getElementById('metric-tokens').textContent = `${data.token_throughput.toFixed(1)} t/s`;
+                    document.getElementById('metric-latency-avg').textContent = `${data.latency_avg.toFixed(0)} ms`;
+                    document.getElementById('metric-latency-p95').textContent = `${data.latency_p95.toFixed(0)} ms`;
+                    document.getElementById('metric-latency-p99').textContent = `${data.latency_p99.toFixed(0)} ms`;
+
+                    // Render sparkline charts
+                    renderChart('chart-cpu', data.cpu_history, 100);
+                    renderChart('chart-memory', data.memory_history, memLimit);
+                    renderChart('chart-tokens', data.token_history, 1);
+                    renderChart('chart-latency-avg', data.latency_avg_history, 200);
+                    renderChart('chart-latency-p95', data.latency_p95_history, 350);
+                    renderChart('chart-latency-p99', data.latency_p99_history, 500);
+                }
+            } catch (err) {
+                console.error('Failed to fetch metrics:', err);
+            }
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KiB', 'MiB', 'GiB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        function renderChart(elementId, history, maxVal) {
+            const figure = document.getElementById(elementId);
+            if (!figure) return;
+            figure.innerHTML = '';
+            
+            const limitMax = Math.max(...history, maxVal);
+            
+            history.forEach(val => {
+                const bar = document.createElement('span');
+                bar.className = 'chart-bar';
+                const heightPct = limitMax > 0 ? (val / limitMax) * 100 : 0;
+                bar.style.height = `${Math.max(4, Math.min(100, heightPct))}%`;
+                figure.appendChild(bar);
+            });
+        }
+
+        function initLogsStream() {
+            const logTerminal = document.getElementById('log-terminal');
+            if (!logTerminal) return;
+
+            let lastLogItem = null;
+
+            const eventSource = new EventSource('/api/logs/stream');
+            eventSource.onmessage = (event) => {
+                const lineText = event.data;
+                if (!lineText) return;
+                
+                const match = lineText.match(/^\[([^\]]+)\]\s*(.*)$/);
+                if (match) {
+                    const timestamp = match[1];
+                    const content = match[2];
+                    
+                    const logLine = document.createElement('li');
+                    logLine.className = 'log-line';
+                    
+                    const tsSpan = document.createElement('p');
+                    tsSpan.className = 'log-timestamp';
+                    tsSpan.textContent = `[${timestamp}]`;
+                    logLine.appendChild(tsSpan);
+                    
+                    const textSpan = document.createElement('p');
+                    textSpan.className = 'log-text';
+                    
+                    if (content.startsWith('[RCA]')) {
+                        const levelSpan = document.createElement('p');
+                        levelSpan.className = 'log-level warn';
+                        levelSpan.textContent = '[RCA]';
+                        logLine.appendChild(levelSpan);
+                        textSpan.textContent = content.substring(5).trim();
+                    } else {
+                        const levelMatch = content.match(/^(INFO|WARN|ERROR):\s*(.*)$/i);
+                        if (levelMatch) {
+                            const level = levelMatch[1].toLowerCase();
+                            const levelSpan = document.createElement('p');
+                            levelSpan.className = `log-level ${level}`;
+                            levelSpan.textContent = `[${levelMatch[1].toUpperCase()}]`;
+                            logLine.appendChild(levelSpan);
+                            textSpan.textContent = levelMatch[2];
+                        } else {
+                            textSpan.textContent = content;
+                        }
+                    }
+                    logLine.appendChild(textSpan);
+                    logTerminal.appendChild(logLine);
+                    lastLogItem = logLine;
+                } else {
+                    if (lastLogItem) {
+                        const textSpan = lastLogItem.querySelector('.log-text');
+                        if (textSpan) {
+                            textSpan.innerHTML += `<br>${lineText}`;
+                        }
+                    } else {
+                        const logLine = document.createElement('li');
+                        logLine.className = 'log-line';
+                        const textSpan = document.createElement('p');
+                        textSpan.className = 'log-text';
+                        textSpan.textContent = lineText;
+                        logLine.appendChild(textSpan);
+                        logTerminal.appendChild(logLine);
+                    }
+                }
+                
+                logTerminal.scrollTop = logTerminal.scrollHeight;
+                
+                while (logTerminal.childElementCount > 100) {
+                    logTerminal.removeChild(logTerminal.firstChild);
+                }
+            };
+            
+            eventSource.onerror = (err) => {
+                console.error('SSE log stream connection error, reconnecting...', err);
+            };
+        }
+
+        function initPlayground() {
+            const btnRedact = document.getElementById('btn-redact');
+            const rawPrompt = document.getElementById('raw-prompt');
+            const maskedPrompt = document.getElementById('masked-prompt');
+
+            if (btnRedact && rawPrompt && maskedPrompt) {
+                btnRedact.addEventListener('click', async () => {
+                    const text = rawPrompt.value;
+                    if (!text) return;
+                    
+                    btnRedact.disabled = true;
+                    btnRedact.textContent = 'Processing...';
+                    
+                    try {
+                        const response = await fetch('/api/mask', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ prompt: text })
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            maskedPrompt.value = data.masked;
+                        } else {
+                            const data = await response.json();
+                            maskedPrompt.value = `Error: ${data.error || 'Failed to process'}`;
+                        }
+                    } catch (err) {
+                        console.error('Failed to test redaction:', err);
+                        maskedPrompt.value = `Error: ${err.message}`;
+                    } finally {
+                        btnRedact.disabled = false;
+                        btnRedact.textContent = 'Test Redaction';
+                    }
+                });
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            await fetchLimits();
+            await fetchMetrics();
+            
+            // Poll metrics every 2 seconds
+            setInterval(fetchMetrics, 2000);
+            
+            const rangeSelect = document.getElementById('metrics-range');
+            if (rangeSelect) {
+                rangeSelect.addEventListener('change', fetchMetrics);
+            }
+            
+            initLogsStream();
+            initPlayground();
+            console.log('IDP Console fully connected to backend.');
         });
     </script>
 </body>
