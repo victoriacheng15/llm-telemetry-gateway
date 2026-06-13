@@ -6,6 +6,7 @@ on:
     paths:
       - '**/*.go'
       - '**/*.py'
+      - '**/*.feature'
       - 'go.mod'
       - 'go.sum'
       - 'requirements.txt'
@@ -16,6 +17,7 @@ on:
     paths:
       - '**/*.go'
       - '**/*.py'
+      - '**/*.feature'
       - 'go.mod'
       - 'go.sum'
       - 'requirements.txt'
@@ -43,6 +45,7 @@ jobs:
           filters: |
             go:
               - '**/*.go'
+              - '**/*.feature'
               - 'go.mod'
               - 'go.sum'
             python:
@@ -99,6 +102,10 @@ jobs:
       - name: Run Go Unit Tests
         run: |
           make test-go
+
+      - name: Run Go BDD E2E Tests
+        run: |
+          make test-bdd
 
   k3s-ci:
     name: Kubernetes Lint
