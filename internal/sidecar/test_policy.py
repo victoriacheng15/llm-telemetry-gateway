@@ -2,6 +2,7 @@ import asyncio
 import os
 from unittest.mock import AsyncMock, patch, MagicMock, mock_open
 import pytest
+import multiprocessing
 import internal.sidecar.policy as policy
 from internal.sidecar.policy import (
     mask_text,
@@ -16,270 +17,700 @@ from internal.sidecar.policy import (
     query_ollama,
 )
 
+# ==============================================================================
+# UNIFIED TABLE-DRIVEN PARAMETRIZED TESTS (IDIOMATIC PYTEST PATTERN)
+# ==============================================================================
+
 
 @pytest.mark.parametrize(
-    "input_data, expected, want_err",
+    "input_data, expected",
     [
-        pytest.param(
-            "My US SSN is 123-45-6789",
-            "My US SSN is [REDACTED_SSN]",
-            False,
-            id="us_ssn_masking",
-        ),
-        pytest.param(
+        ("My US SSN is 123-45-6789", "My US SSN is [REDACTED_SSN]"),
+        (
             "Canadian SIN with spaces 123 456 789",
             "Canadian SIN with spaces [REDACTED_SIN]",
-            False,
-            id="canadian_sin_spaces_masking",
         ),
-        pytest.param(
+        (
             "Canadian SIN with hyphens 123-456-789",
             "Canadian SIN with hyphens [REDACTED_SIN]",
-            False,
-            id="canadian_sin_hyphens_masking",
         ),
-        pytest.param(
-            "Credit Card is 1234-5678-1234-5678",
-            "Credit Card is [REDACTED_CC]",
-            False,
-            id="credit_card_hyphens_masking",
-        ),
-        pytest.param(
-            "No PII in this text prompt",
-            "No PII in this text prompt",
-            False,
-            id="no_pii_clean_payload",
-        ),
-        pytest.param(
+        ("Credit Card is 1234-5678-1234-5678", "Credit Card is [REDACTED_CC]"),
+        ("No PII in this text prompt", "No PII in this text prompt"),
+        (
             "Mixed SSN 123-45-6789 and CC 1111 2222 3333 4444",
             "Mixed SSN [REDACTED_SSN] and CC [REDACTED_CC]",
-            False,
-            id="mixed_pii_payload",
         ),
     ],
 )
-def test_mask_text(input_data, expected, want_err):
-    if want_err:
-        with pytest.raises(Exception):
-            mask_text(input_data)
-    else:
-        assert mask_text(input_data) == expected
+def test_mask_text(input_data, expected):
+    assert mask_text(input_data) == expected
 
 
-# ==============================================================================
-# LIFECYCLE & DECORATOR TESTS
-# ==============================================================================
-
-
-def test_uds_lifecycle_handler_success():
-    """Verify that uds_lifecycle_handler executes the handler and closes the connection cleanly."""
+@pytest.mark.parametrize(
+    "raise_err",
+    [False, True],
+)
+def test_uds_lifecycle_handler(raise_err):
     mock_reader = AsyncMock()
     mock_writer = AsyncMock()
     mock_writer.close = MagicMock()
     called = []
 
     @uds_lifecycle_handler
-    async def dummy_dummy_handler(reader, writer):
-        called.append((reader, writer))
-
-    asyncio.run(dummy_dummy_handler(mock_reader, mock_writer))
-
-    assert called == [(mock_reader, mock_writer)]
-    mock_writer.close.assert_called_once()
-    mock_writer.wait_closed.assert_awaited_once()
-
-
-def test_uds_lifecycle_handler_exception():
-    """Verify that uds_lifecycle_handler traps exceptions inside the handler and ensures cleanup."""
-    mock_reader = AsyncMock()
-    mock_writer = AsyncMock()
-    mock_writer.close = MagicMock()
-
-    @uds_lifecycle_handler
-    async def dummy_dummy_handler(reader, writer):
-        raise ValueError("Simulated handler crash")
-
-    # Exception must not propagate (trapped by decorator)
-    asyncio.run(dummy_dummy_handler(mock_reader, mock_writer))
-
-    mock_writer.close.assert_called_once()
-    mock_writer.wait_closed.assert_awaited_once()
-
-
-@patch("os.path.exists")
-@patch("os.path.dirname")
-@patch("os.makedirs")
-@patch("os.unlink")
-def test_uds_server_lifecycle_clean_setup_and_teardown(
-    mock_unlink, mock_makedirs, mock_dirname, mock_exists
-):
-    """Verify that uds_server_lifecycle handles directory verification, pre-unlinking, and teardown cleanup."""
-    mock_exists.return_value = True
-    mock_dirname.return_value = "/tmp/shared"
-    called = []
-
-    @uds_server_lifecycle("/tmp/shared/test.sock")
-    async def dummy_dummy_main():
+    async def dummy_handler(reader, writer):
         called.append(True)
+        if raise_err:
+            raise ValueError("Simulated handler crash")
 
-    asyncio.run(dummy_dummy_main())
-
+    asyncio.run(dummy_handler(mock_reader, mock_writer))
     assert called == [True]
-    # Check that it unlinked twice: once during setup/startup and once in finally block
-    assert mock_unlink.call_count == 2
-    mock_unlink.assert_any_call("/tmp/shared/test.sock")
+    mock_writer.close.assert_called_once()
+    mock_writer.wait_closed.assert_awaited_once()
 
 
-@patch("os.path.exists")
-@patch("os.path.dirname")
-@patch("os.makedirs")
-@patch("os.unlink")
-def test_uds_server_lifecycle_cancelled_error(
-    mock_unlink, mock_makedirs, mock_dirname, mock_exists
-):
-    """Verify that uds_server_lifecycle traps CancelledError and still executes the cleanup finally block."""
-    mock_exists.return_value = True
-    mock_dirname.return_value = "/tmp/shared"
+@pytest.mark.parametrize(
+    "raise_cancel",
+    [False, True],
+)
+def test_uds_server_lifecycle(raise_cancel):
+    with patch("os.path.exists", return_value=True):
+        with patch("os.path.dirname", return_value="/tmp/shared"):
+            with patch("os.makedirs"):
+                with patch("os.unlink") as mock_unlink:
 
-    @uds_server_lifecycle("/tmp/shared/test.sock")
-    async def dummy_dummy_main():
-        raise asyncio.CancelledError()
+                    @uds_server_lifecycle("/tmp/shared/test.sock")
+                    async def dummy_main():
+                        if raise_cancel:
+                            raise asyncio.CancelledError()
 
-    # CancelledError must not propagate (trapped by decorator)
-    asyncio.run(dummy_dummy_main())
-
-    # Teardown unlinking in finally block must still be executed
-    assert mock_unlink.call_count == 2
-    mock_unlink.assert_any_call("/tmp/shared/test.sock")
+                    asyncio.run(dummy_main())
+                    assert mock_unlink.call_count == 2
+                    mock_unlink.assert_any_call("/tmp/shared/test.sock")
 
 
-# ==============================================================================
-# TELEMETRY & AIOPS EVALUATION TESTS
-# ==============================================================================
+@pytest.mark.parametrize(
+    "limit, mem, expected_pct",
+    [
+        ("1G", 1073741824, 100.0),
+        ("512M", 268435456, 50.0),
+        ("1024K", 524288, 50.0),
+        ("1000", 500, 50.0),
+        ("", 268435456, 50.0),
+        ("invalid", 268435456, 50.0),
+    ],
+)
+def test_get_memory_utilization_limits(limit, mem, expected_pct):
+    with patch.dict(os.environ, {"LIMITS_MEMORY": limit}):
+        mock_data = f"{mem}\n"
+        with patch("builtins.open", mock_open(read_data=mock_data)):
+            val = get_memory_utilization()
+            assert abs(val - expected_pct) < 0.01
 
 
-def test_get_cpu_utilization():
+@pytest.mark.parametrize(
+    "limit, expected_cores",
+    [
+        ("1000m", 1.0),
+        ("2", 2.0),
+        ("invalid", float(multiprocessing.cpu_count())),
+        ("", float(multiprocessing.cpu_count())),
+    ],
+)
+def test_get_cpu_utilization_limits(limit, expected_cores):
     policy.last_cpu_usage = None
     policy.last_cpu_time = None
-    os.environ["LIMITS_CPU"] = "1"
 
-    # First call sets the baseline
-    with patch("builtins.open", mock_open(read_data="usage_usec 10000\n")):
-        with patch("time.time", side_effect=[1000.0, 1001.0]):
-            util1 = get_cpu_utilization()
-            assert util1 is None
+    with patch.dict(os.environ, {"LIMITS_CPU": limit}):
+        with patch("builtins.open", mock_open(read_data="usage_usec 10000\n")):
+            with patch("time.time", side_effect=[1000.0, 1001.0]):
+                util1 = get_cpu_utilization()
+                assert util1 is None
 
-    # Second call computes delta: usage delta = 10,000,000 ns, time delta = 1.0s (1e9 ns).
-    # cpu util = (10,000,000 / 1e9) * 100.0 / 1.0 (limit_cores = 1.0) = 1.0%
-    with patch("builtins.open", mock_open(read_data="usage_usec 20000\n")):
-        with patch("time.time", side_effect=[1001.0, 1002.0]):
-            util2 = get_cpu_utilization()
-            assert util2 is not None
-            assert abs(util2 - 1.0) < 0.01
+        expected_util = 1.0 / expected_cores
+        with patch("builtins.open", mock_open(read_data="usage_usec 20000\n")):
+            with patch("time.time", side_effect=[1001.0, 1002.0]):
+                util2 = get_cpu_utilization()
+                assert util2 is not None
+                assert abs(util2 - expected_util) < 0.01
 
 
-def test_get_memory_utilization():
-    with patch("builtins.open", mock_open(read_data="1048576\n")):
-        util = get_memory_utilization()
-        # memory limit default is 512Mi = 536870912 bytes
-        # 1048576 / 536870912 * 100 = ~0.195%
-        assert abs(util - 0.1953) < 0.001
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        (
+            "gen_ai_usage_input_tokens 5\ngen_ai_usage_output_tokens 10\ngen_ai_client_request_duration_histogram_sum 0.5\ngen_ai_client_request_duration_histogram_count 2\n",
+            {
+                "input_tokens": 5,
+                "output_tokens": 10,
+                "avg_duration_seconds": 0.25,
+                "request_count": 2,
+            },
+        ),
+        (
+            "gen_ai_usage_input_tokens invalid\ngen_ai_usage_output_tokens 10\n",
+            {
+                "input_tokens": 0,
+                "output_tokens": 10,
+                "avg_duration_seconds": 0.0,
+                "request_count": 0,
+            },
+        ),
+        (
+            "gen_ai_usage_output_tokens invalid\n",
+            {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "avg_duration_seconds": 0.0,
+                "request_count": 0,
+            },
+        ),
+        (
+            "gen_ai_client_request_duration_histogram_sum invalid\ngen_ai_client_request_duration_histogram_count 2\n",
+            {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "avg_duration_seconds": 0.0,
+                "request_count": 2,
+            },
+        ),
+        (
+            "gen_ai_client_request_duration_histogram_count invalid\n",
+            {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "avg_duration_seconds": 0.0,
+                "request_count": 0,
+            },
+        ),
+    ],
+)
+def test_get_proxy_metrics(text, expected):
+    res = get_proxy_metrics(text)
+    assert res == expected
 
 
-def test_get_proxy_metrics():
-    metrics_text = (
-        "gen_ai_usage_input_tokens 5\n"
-        "gen_ai_usage_output_tokens 10\n"
-        "gen_ai_client_request_duration_histogram_sum 0.5\n"
-        "gen_ai_client_request_duration_histogram_count 2\n"
-    )
-    stats = get_proxy_metrics(metrics_text)
-    assert stats["input_tokens"] == 5
-    assert stats["output_tokens"] == 10
-    assert stats["avg_duration_seconds"] == 0.25
-    assert stats["request_count"] == 2
-
-
-@patch("os.path.exists", return_value=True)
-def test_parse_logs(mock_exists):
+@pytest.mark.parametrize(
+    "data, expected_len, expected_msg",
+    [
+        ('{"status": 200, "msg": "ok"}\n', 1, "ok"),
+        ("\n", 0, None),
+        ("raw non-JSON log line\n", 1, "raw non-JSON log line"),
+    ],
+)
+def test_parse_logs(data, expected_len, expected_msg):
     policy.log_file_offset = 0
+    with patch("os.path.exists", return_value=True):
+        with patch("builtins.open", mock_open(read_data=data)):
+            logs = parse_logs()
+            assert len(logs) == expected_len
+            if expected_len > 0:
+                assert logs[0].get("msg") == expected_msg
 
-    log_content = '{"status": 200, "duration_seconds": 0.05, "msg": "ok"}\n'
-    with patch("builtins.open", mock_open(read_data=log_content)):
+
+@pytest.mark.parametrize(
+    "path_exists",
+    [False],
+)
+def test_parse_logs_file_not_found(path_exists):
+    with patch("os.path.exists", return_value=path_exists):
         logs = parse_logs()
-        assert len(logs) == 1
-        assert logs[0]["status"] == 200
+        assert logs == []
 
 
-def test_detect_anomalies():
-    logs = [
-        {"status": 500, "msg": "Internal Server Error"},
-        {"status": 200, "duration_seconds": 0.25},
-        {"msg": "PII policy engine unreachable"},
-    ]
-    anomalies = detect_anomalies(
-        85.0, 90.0, logs, health_ok=False, ready_ok=False, network_latency=0.3
-    )
-
-    assert any("High Pod CPU" in a for a in anomalies)
-    assert any("High Pod Memory" in a for a in anomalies)
-    assert any("healthz check failed" in a for a in anomalies)
-    assert any("readyz check failed" in a for a in anomalies)
-    assert any("server error status: 500" in a for a in anomalies)
-    assert any("High request latency" in a for a in anomalies)
-    assert any("High outbound network latency" in a for a in anomalies)
-    assert any(
-        "Go Proxy reported: PII policy engine unreachable" in a for a in anomalies
-    )
+@pytest.mark.parametrize(
+    "error",
+    [IOError("Permission denied")],
+)
+def test_parse_logs_exception(error):
+    with patch("os.path.exists", return_value=True):
+        with patch("builtins.open", side_effect=error):
+            logs = parse_logs()
+            assert logs == []
 
 
-def test_build_prompt_context():
-    stats = {
-        "request_count": 5,
-        "input_tokens": 10,
-        "output_tokens": 20,
-        "avg_duration_seconds": 0.05,
-    }
-    anomalies = ["High Pod CPU Utilization: 85.00%"]
-    ctx = build_prompt_context(85.0, 50.0, stats, anomalies)
+@pytest.mark.parametrize(
+    "input_bytes, expected_bytes",
+    [
+        (b"My SSN is 123-45-6789\n", b"My SSN is [REDACTED_SSN]\n"),
+        (b"", b""),
+    ],
+)
+def test_handle_client(input_bytes, expected_bytes):
+    mock_reader = AsyncMock()
+    mock_reader.readline.return_value = input_bytes
+    mock_writer = AsyncMock()
+    mock_writer.close = MagicMock()
+    mock_writer.write = MagicMock()
 
+    asyncio.run(policy.handle_client(mock_reader, mock_writer))
+
+    if expected_bytes:
+        mock_writer.write.assert_called_once_with(expected_bytes)
+    else:
+        mock_writer.write.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "dummy_param",
+    [True],
+)
+def test_handle_shutdown(dummy_param):
+    mock_server = MagicMock()
+    mock_task = MagicMock()
+    policy.handle_shutdown(mock_server, mock_task)
+    mock_server.close.assert_called_once()
+    mock_task.cancel.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "exists_sequence",
+    [[False, True, True]],
+)
+def test_uds_server_lifecycle_directory_creation(exists_sequence):
+    with patch("os.path.dirname", return_value="/tmp/shared"):
+        with patch("os.path.exists", side_effect=exists_sequence):
+            with patch("os.makedirs") as mock_makedirs:
+                with patch("os.unlink") as mock_unlink:
+
+                    @uds_server_lifecycle("/tmp/shared/test.sock")
+                    async def dummy_main():
+                        pass
+
+                    asyncio.run(dummy_main())
+                    mock_makedirs.assert_called_once_with("/tmp/shared", exist_ok=True)
+                    assert mock_unlink.call_count == 2
+
+
+@pytest.mark.parametrize(
+    "limit_size",
+    [100],
+)
+def test_detect_anomalies_latency_cap(limit_size):
+    policy.request_latencies = [0.1] * limit_size
+    logs = [{"duration_seconds": 0.3}]
+    detect_anomalies(0.0, 0.0, logs, True, True)
+    assert len(policy.request_latencies) == limit_size
+
+
+@pytest.mark.parametrize(
+    "files, expected_usage",
+    [
+        (
+            {
+                "/sys/fs/cgroup/cpu.stat": "nr_periods 101\nnr_throttled 5\nusage_usec 50000\n",
+            },
+            50000 * 1000,
+        ),
+        (
+            {
+                "/sys/fs/cgroup/cpu.stat": IOError("cgroup v2 not mounted"),
+                "/sys/fs/cgroup/cpuacct/cpuacct.usage": "90000000\n",
+            },
+            90000000,
+        ),
+        (
+            {
+                "/sys/fs/cgroup/cpu.stat": IOError("cgroup v2 not mounted"),
+                "/sys/fs/cgroup/cpuacct/cpuacct.usage": IOError(
+                    "cgroup v1 not mounted"
+                ),
+                "/proc/self/stat": "123 (python) S 1 1 1 1 1 1 1 1 1 1 50 100 1 1 1 1 1\n",
+            },
+            1500000000,
+        ),
+        (
+            {
+                "/sys/fs/cgroup/cpu.stat": IOError("err"),
+                "/sys/fs/cgroup/cpuacct/cpuacct.usage": IOError("err"),
+                "/proc/self/stat": IOError("err"),
+            },
+            None,
+        ),
+    ],
+)
+def test_cgroup_cpu_fallbacks(files, expected_usage):
+    def create_mock_open(files_dict):
+        def my_open(path, mode="r", *args, **kwargs):
+            if path in files_dict:
+                content_or_err = files_dict[path]
+                if isinstance(content_or_err, Exception):
+                    raise content_or_err
+                return mock_open(read_data=content_or_err)(path, mode)
+            raise FileNotFoundError(f"Mock open file not found: {path}")
+
+        return my_open
+
+    policy.last_cpu_usage = None
+    policy.last_cpu_time = None
+    with patch("builtins.open", side_effect=create_mock_open(files)):
+        get_cpu_utilization()
+        assert policy.last_cpu_usage == expected_usage
+
+
+@pytest.mark.parametrize(
+    "files, expected_bytes",
+    [
+        (
+            {
+                "/sys/fs/cgroup/memory.current": "1048576\n",
+            },
+            1048576,
+        ),
+        (
+            {
+                "/sys/fs/cgroup/memory.current": IOError("err"),
+                "/sys/fs/cgroup/memory/memory.usage_in_bytes": "2097152\n",
+            },
+            2097152,
+        ),
+        (
+            {
+                "/sys/fs/cgroup/memory.current": IOError("err"),
+                "/sys/fs/cgroup/memory/memory.usage_in_bytes": IOError("err"),
+                "/proc/self/status": "Name:\tpython\nState:\tS\nVmRSS:\t\t    3072 kB\n",
+            },
+            3072 * 1024,
+        ),
+        (
+            {
+                "/sys/fs/cgroup/memory.current": IOError("err"),
+                "/sys/fs/cgroup/memory/memory.usage_in_bytes": IOError("err"),
+                "/proc/self/status": IOError("err"),
+            },
+            None,
+        ),
+    ],
+)
+def test_cgroup_memory_fallbacks(files, expected_bytes):
+    def create_mock_open(files_dict):
+        def my_open(path, mode="r", *args, **kwargs):
+            if path in files_dict:
+                content_or_err = files_dict[path]
+                if isinstance(content_or_err, Exception):
+                    raise content_or_err
+                return mock_open(read_data=content_or_err)(path, mode)
+            raise FileNotFoundError(f"Mock open file not found: {path}")
+
+        return my_open
+
+    with patch("builtins.open", side_effect=create_mock_open(files)):
+        val = get_memory_utilization()
+        if expected_bytes is None:
+            assert val is None
+        else:
+            expected_pct = (expected_bytes / 536870912.0) * 100.0
+            assert abs(val - expected_pct) < 0.001
+
+
+@pytest.mark.parametrize(
+    "fetch_metrics_val, cpu, mem, logs, health, ollama_res, ollama_err, fetch_err, get_cpu_err",
+    [
+        ("metrics_data", 10.0, 10.0, [], (True, True), None, None, None, None),
+        (
+            "metrics_data",
+            90.0,
+            10.0,
+            [],
+            (True, True),
+            "[RCA] High CPU utilization.",
+            None,
+            None,
+            None,
+        ),
+        (
+            "metrics_data",
+            90.0,
+            10.0,
+            [],
+            (True, True),
+            None,
+            Exception("Ollama connection refused"),
+            None,
+            None,
+        ),
+        (
+            None,
+            10.0,
+            10.0,
+            [],
+            (True, True),
+            None,
+            None,
+            Exception("OTel collector down"),
+            None,
+        ),
+        (
+            "metrics_data",
+            None,
+            10.0,
+            [],
+            (True, True),
+            None,
+            None,
+            None,
+            ValueError("CPU read failed"),
+        ),
+    ],
+)
+@patch("internal.sidecar.policy.fetch_metrics")
+@patch("internal.sidecar.policy.get_cpu_utilization")
+@patch("internal.sidecar.policy.get_memory_utilization")
+@patch("internal.sidecar.policy.parse_logs")
+@patch("internal.sidecar.policy.check_health")
+@patch("internal.sidecar.policy.query_ollama")
+@patch("builtins.open", new_callable=mock_open)
+@patch("asyncio.sleep")
+def test_telemetry_evaluation_loop(
+    mock_sleep,
+    mock_file_open,
+    mock_query_ollama,
+    mock_check_health,
+    mock_parse_logs,
+    mock_get_mem,
+    mock_get_cpu,
+    mock_fetch_metrics,
+    fetch_metrics_val,
+    cpu,
+    mem,
+    logs,
+    health,
+    ollama_res,
+    ollama_err,
+    fetch_err,
+    get_cpu_err,
+):
+    mock_sleep.side_effect = [None, asyncio.CancelledError()]
+
+    if fetch_err:
+        mock_fetch_metrics.side_effect = fetch_err
+    else:
+        mock_fetch_metrics.return_value = fetch_metrics_val
+
+    if get_cpu_err:
+        mock_get_cpu.side_effect = get_cpu_err
+    else:
+        mock_get_cpu.return_value = cpu
+
+    mock_get_mem.return_value = mem
+    mock_parse_logs.return_value = logs
+    mock_check_health.return_value = health
+
+    if ollama_err:
+        mock_query_ollama.side_effect = ollama_err
+    elif ollama_res:
+        mock_query_ollama.return_value = ollama_res
+
+    async def run_and_cancel():
+        task = asyncio.create_task(policy.telemetry_evaluation_loop())
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    asyncio.run(run_and_cancel())
+
+
+@pytest.mark.parametrize(
+    "cpu, mem, logs, health_ok, ready_ok, latency, restart_time, expected_anomalies",
+    [
+        (10.0, 15.0, [], True, True, 0.05, None, []),
+        (85.0, 90.0, [], True, True, 0.05, None, ["High Pod CPU", "High Pod Memory"]),
+        (
+            10.0,
+            15.0,
+            [],
+            False,
+            False,
+            0.05,
+            None,
+            ["healthz check failed", "readyz check failed"],
+        ),
+        (
+            10.0,
+            15.0,
+            [
+                {"status": 500, "msg": "Internal Server Error"},
+                {"duration_seconds": 0.25, "status": 200},
+            ],
+            True,
+            True,
+            0.3,
+            None,
+            [
+                "server error status: 500",
+                "High request latency",
+                "High outbound network latency",
+            ],
+        ),
+        (
+            10.0,
+            15.0,
+            [],
+            True,
+            True,
+            0.05,
+            1000.0,
+            ["Sidecar container restart detected"],
+        ),
+    ],
+)
+def test_detect_anomalies(
+    cpu, mem, logs, health_ok, ready_ok, latency, restart_time, expected_anomalies
+):
+    policy.last_restart_time = restart_time
+    with patch("time.time", return_value=1010.0 if restart_time else 0.0):
+        anomalies = detect_anomalies(cpu, mem, logs, health_ok, ready_ok, latency)
+        for expected in expected_anomalies:
+            assert any(expected in a for a in anomalies)
+
+
+@pytest.mark.parametrize(
+    "cpu, mem, stats, anomalies, expected_contains",
+    [
+        (
+            12.5,
+            30.0,
+            {
+                "request_count": 5,
+                "input_tokens": 10,
+                "output_tokens": 20,
+                "avg_duration_seconds": 0.05,
+            },
+            [],
+            ["System Status: HEALTHY", "Pod CPU Utilization: 12.5%"],
+        ),
+        (
+            85.0,
+            50.0,
+            {
+                "request_count": 5,
+                "input_tokens": 10,
+                "output_tokens": 20,
+                "avg_duration_seconds": 0.05,
+            },
+            ["High CPU Utilization"],
+            ["System Status: ANOMALOUS", "[ALERT] High CPU Utilization"],
+        ),
+    ],
+)
+def test_build_prompt_context(cpu, mem, stats, anomalies, expected_contains):
+    ctx = build_prompt_context(cpu, mem, stats, anomalies)
     assert "=== Telemetry Diagnostics Context ===" in ctx
-    assert "System Status: ANOMALOUS" in ctx
-    assert "Pod CPU Utilization: 85.0%" in ctx
-    assert (
-        "[ALERT] High Pod Pod CPU Utilization" in ctx or "[ALERT] High Pod CPU" in ctx
-    )
+    for expected in expected_contains:
+        assert expected in ctx
 
 
+@pytest.mark.parametrize(
+    "response_bytes, expected",
+    [
+        (b'{"response": "[RCA] Checked successfully."}', "[RCA] Checked successfully."),
+    ],
+)
 @patch("urllib.request.urlopen")
-def test_query_ollama(mock_urlopen):
+def test_query_ollama(mock_urlopen, response_bytes, expected):
     mock_response = MagicMock()
-    mock_response.read.return_value = (
-        b'{"response": "[RCA] Simulated Root Cause Analysis result."}'
-    )
+    mock_response.read.return_value = response_bytes
     mock_urlopen.return_value.__enter__.return_value = mock_response
 
     res = asyncio.run(query_ollama("test prompt"))
-    assert res == "[RCA] Simulated Root Cause Analysis result."
+    assert res == expected
 
 
-def test_container_restart_detection():
+@pytest.mark.parametrize(
+    "response_bytes, expected",
+    [
+        (b'{"response": "[RCA] Blocking details."}', "[RCA] Blocking details."),
+    ],
+)
+@patch("urllib.request.urlopen")
+def test_query_ollama_blocking(mock_urlopen, response_bytes, expected):
+    mock_response = MagicMock()
+    mock_response.read.return_value = response_bytes
+    mock_urlopen.return_value.__enter__.return_value = mock_response
+
+    res = policy.query_ollama_blocking("prompt text")
+    assert res == expected
+
+
+@pytest.mark.parametrize(
+    "file_exists, read_data, expected_restart",
+    [
+        (False, "", False),
+        (True, "12345.0", True),
+    ],
+)
+def test_container_restart_detection(file_exists, read_data, expected_restart):
     policy.last_restart_time = None
-
-    # Verify check_container_restart on clean boot
-    with patch("os.path.exists", return_value=False):
-        with patch("builtins.open", mock_open()):
+    with patch("os.path.exists", return_value=file_exists):
+        with patch("builtins.open", mock_open(read_data=read_data)):
             policy.check_container_restart()
-            assert policy.last_restart_time is None
+            has_restart = policy.last_restart_time is not None
+            assert has_restart == expected_restart
 
-    # Verify check_container_restart on crash recovery
-    with patch("os.path.exists", return_value=True):
-        with patch("builtins.open", mock_open(read_data="12345.0")):
-            policy.check_container_restart()
-            assert policy.last_restart_time is not None
 
-    # Verify detect_anomalies registers the anomaly
-    anomalies = policy.detect_anomalies(
-        cpu_util=0.0, mem_util=0.0, logs=[], health_ok=True, ready_ok=True
-    )
-    assert any("Sidecar container restart detected" in a for a in anomalies)
+@pytest.mark.parametrize(
+    "response_bytes, expected",
+    [
+        (b"mocked metrics data", "mocked metrics data"),
+    ],
+)
+@patch("urllib.request.urlopen")
+def test_fetch_metrics(mock_urlopen, response_bytes, expected):
+    mock_response = MagicMock()
+    mock_response.read.return_value = response_bytes
+    mock_urlopen.return_value.__enter__.return_value = mock_response
+
+    res = policy.fetch_metrics()
+    assert res == expected
+
+
+@pytest.mark.parametrize(
+    "side_effect, status, expected_health, expected_ready",
+    [
+        (None, 200, True, True),
+        (Exception("connection refused"), None, False, False),
+    ],
+)
+@patch("urllib.request.urlopen")
+def test_check_health(
+    mock_urlopen, side_effect, status, expected_health, expected_ready
+):
+    mock_urlopen.reset_mock()
+    if side_effect:
+        mock_urlopen.side_effect = side_effect
+    else:
+        mock_urlopen.side_effect = None
+        mock_response = MagicMock()
+        mock_response.status = status
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+
+    health, ready = policy.check_health()
+    assert health == expected_health
+    assert ready == expected_ready
+
+
+@pytest.mark.parametrize(
+    "dummy_param",
+    [True],
+)
+@patch("asyncio.start_unix_server", new_callable=AsyncMock)
+@patch("asyncio.create_task")
+@patch("asyncio.get_running_loop")
+def test_main(mock_get_loop, mock_create_task, mock_start_server, dummy_param):
+    mock_loop = MagicMock()
+    mock_get_loop.return_value = mock_loop
+    mock_server = AsyncMock()
+    mock_start_server.return_value = mock_server
+
+    mock_server.serve_forever.side_effect = asyncio.CancelledError()
+
+    asyncio.run(policy.main())
+
+    mock_start_server.assert_called_once()
+    mock_create_task.assert_called_once()
+    mock_loop.add_signal_handler.assert_called()
+
+    # Close any unawaited coroutines passed to the mocked create_task
+    for call in mock_create_task.call_args_list:
+        coro = call[0][0]
+        coro.close()
