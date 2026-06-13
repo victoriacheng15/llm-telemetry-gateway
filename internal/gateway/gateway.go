@@ -40,6 +40,13 @@ var (
 	durationHist  metric.Float64Histogram
 
 	execCommand = exec.Command
+
+	cpuStatPath      = "/sys/fs/cgroup/cpu.stat"
+	cpuacctUsagePath = "/sys/fs/cgroup/cpuacct/cpuacct.usage"
+	procStatPath     = "/proc/self/stat"
+	memCurrentPath   = "/sys/fs/cgroup/memory.current"
+	memUsagePath     = "/sys/fs/cgroup/memory/memory.usage_in_bytes"
+	procStatusPath   = "/proc/self/status"
 )
 
 type MetricEntry struct {
@@ -66,7 +73,7 @@ type MetricsTracker struct {
 var globalTracker = &MetricsTracker{}
 
 func readCPUUsageCgroupV2() (int64, error) {
-	data, err := os.ReadFile("/sys/fs/cgroup/cpu.stat")
+	data, err := os.ReadFile(cpuStatPath)
 	if err != nil {
 		return 0, err
 	}
@@ -84,7 +91,7 @@ func readCPUUsageCgroupV2() (int64, error) {
 }
 
 func readCPUUsageCgroupV1() (int64, error) {
-	data, err := os.ReadFile("/sys/fs/cgroup/cpuacct/cpuacct.usage")
+	data, err := os.ReadFile(cpuacctUsagePath)
 	if err != nil {
 		return 0, err
 	}
@@ -92,7 +99,7 @@ func readCPUUsageCgroupV1() (int64, error) {
 }
 
 func readCPUUsageProc() int64 {
-	data, err := os.ReadFile("/proc/self/stat")
+	data, err := os.ReadFile(procStatPath)
 	if err != nil {
 		return 0
 	}
@@ -112,7 +119,7 @@ func readCPUUsageProc() int64 {
 }
 
 func readMemoryUsageCgroupV2() (int64, error) {
-	data, err := os.ReadFile("/sys/fs/cgroup/memory.current")
+	data, err := os.ReadFile(memCurrentPath)
 	if err != nil {
 		return 0, err
 	}
@@ -120,7 +127,7 @@ func readMemoryUsageCgroupV2() (int64, error) {
 }
 
 func readMemoryUsageCgroupV1() (int64, error) {
-	data, err := os.ReadFile("/sys/fs/cgroup/memory/memory.usage_in_bytes")
+	data, err := os.ReadFile(memUsagePath)
 	if err != nil {
 		return 0, err
 	}
@@ -128,7 +135,7 @@ func readMemoryUsageCgroupV1() (int64, error) {
 }
 
 func readMemoryUsageProc() (int64, error) {
-	data, err := os.ReadFile("/proc/self/status")
+	data, err := os.ReadFile(procStatusPath)
 	if err != nil {
 		return 0, err
 	}

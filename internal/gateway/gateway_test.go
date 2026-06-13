@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -296,17 +297,24 @@ func TestHandleReadyz(t *testing.T) {
 }
 
 func TestRun(t *testing.T) {
-	// Execute Run in a goroutine on a random port
-	go Run("127.0.0.1:0")
+	tests := []struct {
+		name string
+		addr string
+	}{
+		{
+			name: "run and shutdown random port",
+			addr: "127.0.0.1:0",
+		},
+	}
 
-	// Wait briefly for server startup
-	time.Sleep(100 * time.Millisecond)
-
-	// Send a SIGINT shutdown signal directly to the exported SigChan
-	SigChan <- syscall.SIGINT
-
-	// Give the server thread time to stop gracefully
-	time.Sleep(100 * time.Millisecond)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			go Run(tt.addr)
+			time.Sleep(100 * time.Millisecond)
+			SigChan <- syscall.SIGINT
+			time.Sleep(100 * time.Millisecond)
+		})
+	}
 }
 
 // Helper process for mocking execCommand
@@ -493,39 +501,54 @@ func TestHandleDiagnostics(t *testing.T) {
 	DiagnosticsPath = diagFile
 	defer func() { DiagnosticsPath = oldPath }()
 
-	// Test 1: File not exist
-	req := httptest.NewRequest("GET", "/api/diagnostics", nil)
-	rr := httptest.NewRecorder()
-	HandleDiagnostics(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
-	}
-	if rr.Body.String() != "Diagnostics not yet available." {
-		t.Errorf("expected body 'Diagnostics not yet available.', got %q", rr.Body.String())
+	tests := []struct {
+		name           string
+		method         string
+		setupFunc      func()
+		expectedStatus int
+		expectedBody   string
+	}{
+		{
+			name:   "file not exist",
+			method: "GET",
+			setupFunc: func() {
+				os.Remove(diagFile)
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   "Diagnostics not yet available.",
+		},
+		{
+			name:   "file exists",
+			method: "GET",
+			setupFunc: func() {
+				os.WriteFile(diagFile, []byte("metrics payload"), 0644)
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   "metrics payload",
+		},
+		{
+			name:           "method not allowed",
+			method:         "POST",
+			setupFunc:      func() {},
+			expectedStatus: http.StatusMethodNotAllowed,
+			expectedBody:   "",
+		},
 	}
 
-	// Test 2: File exists
-	err := os.WriteFile(diagFile, []byte("metrics payload"), 0644)
-	if err != nil {
-		t.Fatalf("failed to write mock diagnostics: %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setupFunc()
+			req := httptest.NewRequest(tt.method, "/api/diagnostics", nil)
+			rr := httptest.NewRecorder()
+			HandleDiagnostics(rr, req)
 
-	req = httptest.NewRequest("GET", "/api/diagnostics", nil)
-	rr = httptest.NewRecorder()
-	HandleDiagnostics(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
-	}
-	if rr.Body.String() != "metrics payload" {
-		t.Errorf("expected body 'metrics payload', got %q", rr.Body.String())
-	}
-
-	// Test 3: Method Not Allowed
-	req = httptest.NewRequest("POST", "/api/diagnostics", nil)
-	rr = httptest.NewRecorder()
-	HandleDiagnostics(rr, req)
-	if rr.Code != http.StatusMethodNotAllowed {
-		t.Errorf("expected status %d, got %d", http.StatusMethodNotAllowed, rr.Code)
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, rr.Code)
+			}
+			if tt.expectedBody != "" && rr.Body.String() != tt.expectedBody {
+				t.Errorf("expected body %q, got %q", tt.expectedBody, rr.Body.String())
+			}
+		})
 	}
 }
 
@@ -537,40 +560,58 @@ func TestHandleRCALogStream(t *testing.T) {
 	RCALogPath = logFile
 	defer func() { RCALogPath = oldPath }()
 
-	err := os.WriteFile(logFile, []byte("line 1\nline 2\n"), 0644)
-	if err != nil {
-		t.Fatalf("failed to write mock log: %v", err)
+	tests := []struct {
+		name           string
+		fileContent    string
+		expectedStatus int
+		expectedSubstr []string
+	}{
+		{
+			name:           "stream log file contents",
+			fileContent:    "line 1\nline 2\n",
+			expectedStatus: http.StatusOK,
+			expectedSubstr: []string{"data: line 1", "data: line 2"},
+		},
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	req := httptest.NewRequest("GET", "/api/logs/stream", nil).WithContext(ctx)
-	rr := httptest.NewRecorder()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := os.WriteFile(logFile, []byte(tt.fileContent), 0644)
+			if err != nil {
+				t.Fatalf("failed to write mock log: %v", err)
+			}
 
-	// Run handler in goroutine and cancel context after 50ms to exit the loop
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		cancel()
-	}()
+			ctx, cancel := context.WithCancel(context.Background())
+			req := httptest.NewRequest("GET", "/api/logs/stream", nil).WithContext(ctx)
+			rr := httptest.NewRecorder()
 
-	HandleRCALogStream(rr, req)
+			go func() {
+				time.Sleep(50 * time.Millisecond)
+				cancel()
+			}()
 
-	if rr.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
-	}
+			HandleRCALogStream(rr, req)
 
-	contentType := rr.Header().Get("Content-Type")
-	if contentType != "text/event-stream" {
-		t.Errorf("expected Content-Type text/event-stream, got %q", contentType)
-	}
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, rr.Code)
+			}
 
-	body := rr.Body.String()
-	if !strings.Contains(body, "data: line 1") || !strings.Contains(body, "data: line 2") {
-		t.Errorf("expected streamed data, got %q", body)
+			contentType := rr.Header().Get("Content-Type")
+			if contentType != "text/event-stream" {
+				t.Errorf("expected Content-Type text/event-stream, got %q", contentType)
+			}
+
+			body := rr.Body.String()
+			for _, sub := range tt.expectedSubstr {
+				if !strings.Contains(body, sub) {
+					t.Errorf("expected streamed data to contain %q, got %q", sub, body)
+				}
+			}
+		})
 	}
 }
 
 func TestHandleMaskTest(t *testing.T) {
-	// Set up UDS Mock Server
 	tempDir := t.TempDir()
 	testSocket := filepath.Join(tempDir, "test_mask.sock")
 
@@ -609,39 +650,483 @@ func TestHandleMaskTest(t *testing.T) {
 	SocketPath = testSocket
 	defer func() { SocketPath = oldSocket }()
 
-	// Test 1: Successful Masking
-	reqPayload := `{"prompt": "My SSN is 123-45-6789"}`
-	req := httptest.NewRequest("POST", "/api/mask", bytes.NewBufferString(reqPayload))
-	rr := httptest.NewRecorder()
-
-	HandleMaskTest(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+	tests := []struct {
+		name           string
+		method         string
+		payload        string
+		expectedStatus int
+		expectedMasked string
+	}{
+		{
+			name:           "successful masking",
+			method:         "POST",
+			payload:        `{"prompt": "My SSN is 123-45-6789"}`,
+			expectedStatus: http.StatusOK,
+			expectedMasked: "My SSN is [REDACTED_SSN]",
+		},
+		{
+			name:           "invalid json",
+			method:         "POST",
+			payload:        "invalid json",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "method not allowed",
+			method:         "GET",
+			payload:        "",
+			expectedStatus: http.StatusMethodNotAllowed,
+		},
 	}
 
-	var res MaskResponse
-	err = json.Unmarshal(rr.Body.Bytes(), &res)
-	if err != nil {
-		t.Fatalf("failed to unmarshal response: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var req *http.Request
+			if tt.payload != "" {
+				req = httptest.NewRequest(tt.method, "/api/mask", bytes.NewBufferString(tt.payload))
+			} else {
+				req = httptest.NewRequest(tt.method, "/api/mask", nil)
+			}
+			rr := httptest.NewRecorder()
+
+			HandleMaskTest(rr, req)
+
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, rr.Code)
+			}
+
+			if tt.expectedStatus == http.StatusOK {
+				var res MaskResponse
+				err = json.Unmarshal(rr.Body.Bytes(), &res)
+				if err != nil {
+					t.Fatalf("failed to unmarshal response: %v", err)
+				}
+				if res.Masked != tt.expectedMasked {
+					t.Errorf("expected masked %q, got %q", tt.expectedMasked, res.Masked)
+				}
+			}
+		})
 	}
-	if res.Masked != "My SSN is [REDACTED_SSN]" {
-		t.Errorf("expected masked 'My SSN is [REDACTED_SSN]', got %q", res.Masked)
+}
+
+func TestReadCPUUsageCgroupV2(t *testing.T) {
+	tempDir := t.TempDir()
+	cpuStatPath = filepath.Join(tempDir, "cpu.stat")
+	defer func() { cpuStatPath = "/sys/fs/cgroup/cpu.stat" }()
+
+	tests := []struct {
+		name        string
+		fileContent string
+		expectedVal int64
+		expectErr   bool
+	}{
+		{
+			name:        "valid usage_usec",
+			fileContent: "usage_usec 1000000\nsome_other_field 12345\n",
+			expectedVal: 1000000000,
+			expectErr:   false,
+		},
+		{
+			name:        "invalid data format",
+			fileContent: "usage_usec_invalid\n",
+			expectedVal: 0,
+			expectErr:   true,
+		},
 	}
 
-	// Test 2: Invalid JSON
-	req = httptest.NewRequest("POST", "/api/mask", bytes.NewBufferString("invalid json"))
-	rr = httptest.NewRecorder()
-	HandleMaskTest(rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.WriteFile(cpuStatPath, []byte(tt.fileContent), 0644)
+			val, err := readCPUUsageCgroupV2()
+			if (err != nil) != tt.expectErr {
+				t.Errorf("expected error = %v, got %v", tt.expectErr, err)
+			}
+			if val != tt.expectedVal {
+				t.Errorf("expected value = %v, got %v", tt.expectedVal, val)
+			}
+		})
+	}
+}
+
+func TestReadCPUUsageCgroupV1(t *testing.T) {
+	tempDir := t.TempDir()
+	cpuacctUsagePath = filepath.Join(tempDir, "cpuacct.usage")
+	defer func() { cpuacctUsagePath = "/sys/fs/cgroup/cpuacct/cpuacct.usage" }()
+
+	tests := []struct {
+		name        string
+		fileContent string
+		expectedVal int64
+		expectErr   bool
+	}{
+		{
+			name:        "valid cpuacct usage",
+			fileContent: "2000000000\n",
+			expectedVal: 2000000000,
+			expectErr:   false,
+		},
 	}
 
-	// Test 3: Method Not Allowed
-	req = httptest.NewRequest("GET", "/api/mask", nil)
-	rr = httptest.NewRecorder()
-	HandleMaskTest(rr, req)
-	if rr.Code != http.StatusMethodNotAllowed {
-		t.Errorf("expected status %d, got %d", http.StatusMethodNotAllowed, rr.Code)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.WriteFile(cpuacctUsagePath, []byte(tt.fileContent), 0644)
+			val, err := readCPUUsageCgroupV1()
+			if (err != nil) != tt.expectErr {
+				t.Errorf("expected error = %v, got %v", tt.expectErr, err)
+			}
+			if val != tt.expectedVal {
+				t.Errorf("expected value = %v, got %v", tt.expectedVal, val)
+			}
+		})
+	}
+}
+
+func TestReadCPUUsageProc(t *testing.T) {
+	tempDir := t.TempDir()
+	procStatPath = filepath.Join(tempDir, "stat")
+	defer func() { procStatPath = "/proc/self/stat" }()
+
+	tests := []struct {
+		name        string
+		fileContent string
+		expectedVal int64
+	}{
+		{
+			name:        "valid proc stat",
+			fileContent: "(test_proc) 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17\n",
+			expectedVal: 250000000,
+		},
+		{
+			name:        "invalid proc stat",
+			fileContent: "(test_proc) 1 2\n",
+			expectedVal: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.WriteFile(procStatPath, []byte(tt.fileContent), 0644)
+			val := readCPUUsageProc()
+			if val != tt.expectedVal {
+				t.Errorf("expected value = %v, got %v", tt.expectedVal, val)
+			}
+		})
+	}
+}
+
+func TestReadMemoryUsageCgroupV2(t *testing.T) {
+	tempDir := t.TempDir()
+	memCurrentPath = filepath.Join(tempDir, "memory.current")
+	defer func() { memCurrentPath = "/sys/fs/cgroup/memory.current" }()
+
+	tests := []struct {
+		name        string
+		fileContent string
+		expectedVal int64
+		expectErr   bool
+	}{
+		{
+			name:        "valid memory usage",
+			fileContent: "104857600\n",
+			expectedVal: 104857600,
+			expectErr:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.WriteFile(memCurrentPath, []byte(tt.fileContent), 0644)
+			val, err := readMemoryUsageCgroupV2()
+			if (err != nil) != tt.expectErr {
+				t.Errorf("expected error = %v, got %v", tt.expectErr, err)
+			}
+			if val != tt.expectedVal {
+				t.Errorf("expected value = %v, got %v", tt.expectedVal, val)
+			}
+		})
+	}
+}
+
+func TestReadMemoryUsageCgroupV1(t *testing.T) {
+	tempDir := t.TempDir()
+	memUsagePath = filepath.Join(tempDir, "memory.usage_in_bytes")
+	defer func() { memUsagePath = "/sys/fs/cgroup/memory/memory.usage_in_bytes" }()
+
+	tests := []struct {
+		name        string
+		fileContent string
+		expectedVal int64
+		expectErr   bool
+	}{
+		{
+			name:        "valid memory usage in bytes",
+			fileContent: "209715200\n",
+			expectedVal: 209715200,
+			expectErr:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.WriteFile(memUsagePath, []byte(tt.fileContent), 0644)
+			val, err := readMemoryUsageCgroupV1()
+			if (err != nil) != tt.expectErr {
+				t.Errorf("expected error = %v, got %v", tt.expectErr, err)
+			}
+			if val != tt.expectedVal {
+				t.Errorf("expected value = %v, got %v", tt.expectedVal, val)
+			}
+		})
+	}
+}
+
+func TestReadMemoryUsageProc(t *testing.T) {
+	tempDir := t.TempDir()
+	procStatusPath = filepath.Join(tempDir, "status")
+	defer func() { procStatusPath = "/proc/self/status" }()
+
+	tests := []struct {
+		name        string
+		fileContent string
+		expectedVal int64
+		expectErr   bool
+	}{
+		{
+			name:        "valid VmRSS",
+			fileContent: "Name: proc\nVmRSS:     50000 kB\n",
+			expectedVal: 51200000,
+			expectErr:   false,
+		},
+		{
+			name:        "missing VmRSS",
+			fileContent: "Name: proc\n",
+			expectedVal: 0,
+			expectErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.WriteFile(procStatusPath, []byte(tt.fileContent), 0644)
+			val, err := readMemoryUsageProc()
+			if (err != nil) != tt.expectErr {
+				t.Errorf("expected error = %v, got %v", tt.expectErr, err)
+			}
+			if val != tt.expectedVal {
+				t.Errorf("expected value = %v, got %v", tt.expectedVal, val)
+			}
+		})
+	}
+}
+
+func TestReadMemoryUsageGo(t *testing.T) {
+	tests := []struct {
+		name string
+	}{
+		{
+			name: "read memory usage go",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			val := readMemoryUsageGo()
+			if val <= 0 {
+				t.Errorf("expected positive memory, got %d", val)
+			}
+		})
+	}
+}
+
+func TestParseCPULimit(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected float64
+	}{
+		{
+			name:     "limit in millicores",
+			input:    "500m",
+			expected: 0.5,
+		},
+		{
+			name:     "limit in cores",
+			input:    "2",
+			expected: 2.0,
+		},
+		{
+			name:     "empty limit fallback to NumCPU",
+			input:    "",
+			expected: float64(runtime.NumCPU()),
+		},
+		{
+			name:     "invalid limit fallback to NumCPU",
+			input:    "invalid",
+			expected: float64(runtime.NumCPU()),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			val := parseCPULimit(tt.input)
+			if val != tt.expected {
+				t.Errorf("expected %f, got %f", tt.expected, val)
+			}
+		})
+	}
+}
+
+func TestCollectSystemMetrics(t *testing.T) {
+	tempDir := t.TempDir()
+
+	oldCpuStat := cpuStatPath
+	oldMemCurrent := memCurrentPath
+	defer func() {
+		cpuStatPath = oldCpuStat
+		memCurrentPath = oldMemCurrent
+	}()
+
+	cpuStatPath = filepath.Join(tempDir, "cpu.stat")
+	memCurrentPath = filepath.Join(tempDir, "memory.current")
+
+	tests := []struct {
+		name        string
+		cpuStat1    string
+		cpuStat2    string
+		memCurrent  string
+		expectedLen int
+	}{
+		{
+			name:        "collect system metrics successfully",
+			cpuStat1:    "usage_usec 10000\n",
+			cpuStat2:    "usage_usec 20000\n",
+			memCurrent:  "104857600\n",
+			expectedLen: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.WriteFile(cpuStatPath, []byte(tt.cpuStat1), 0644)
+			os.WriteFile(memCurrentPath, []byte(tt.memCurrent), 0644)
+
+			tracker := &MetricsTracker{}
+			tracker.collectSystemMetrics()
+
+			os.WriteFile(cpuStatPath, []byte(tt.cpuStat2), 0644)
+			tracker.collectSystemMetrics()
+
+			tracker.mu.RLock()
+			metricsCount := len(tracker.systemMetrics)
+			tracker.mu.RUnlock()
+
+			if metricsCount != tt.expectedLen {
+				t.Errorf("expected %d metric points, got %d", tt.expectedLen, metricsCount)
+			}
+		})
+	}
+}
+
+func TestHandleMetricsAndLimits(t *testing.T) {
+	// Populate globalTracker with mock data
+	globalTracker.mu.Lock()
+	globalTracker.systemMetrics = []SystemMetric{
+		{Timestamp: time.Now().Add(-10 * time.Minute), CPU: 45.5, Memory: 104857600},
+		{Timestamp: time.Now().Add(-5 * time.Minute), CPU: 50.0, Memory: 105857600},
+	}
+	globalTracker.requests = []MetricEntry{
+		{Timestamp: time.Now().Add(-2 * time.Second), Duration: 0.15, Tokens: 100},
+		{Timestamp: time.Now().Add(-1 * time.Second), Duration: 0.05, Tokens: 50},
+	}
+	globalTracker.mu.Unlock()
+
+	os.Setenv("LIMITS_CPU", "1000m")
+	os.Setenv("LIMITS_MEMORY", "1Gi")
+	defer func() {
+		os.Unsetenv("LIMITS_CPU")
+		os.Unsetenv("LIMITS_MEMORY")
+	}()
+
+	tests := []struct {
+		name           string
+		endpoint       string
+		method         string
+		url            string
+		expectedStatus int
+	}{
+		{
+			name:           "limits GET success",
+			endpoint:       "limits",
+			method:         "GET",
+			url:            "/api/limits",
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "limits POST method not allowed",
+			endpoint:       "limits",
+			method:         "POST",
+			url:            "/api/limits",
+			expectedStatus: http.StatusMethodNotAllowed,
+		},
+		{
+			name:           "metrics GET success 30m",
+			endpoint:       "metrics",
+			method:         "GET",
+			url:            "/api/metrics?range=30m",
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "metrics GET success 1h",
+			endpoint:       "metrics",
+			method:         "GET",
+			url:            "/api/metrics?range=1h",
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "metrics GET success 3h",
+			endpoint:       "metrics",
+			method:         "GET",
+			url:            "/api/metrics?range=3h",
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "metrics GET success default range",
+			endpoint:       "metrics",
+			method:         "GET",
+			url:            "/api/metrics?range=default",
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "metrics POST method not allowed",
+			endpoint:       "metrics",
+			method:         "POST",
+			url:            "/api/metrics",
+			expectedStatus: http.StatusMethodNotAllowed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.url, nil)
+			rr := httptest.NewRecorder()
+
+			if tt.endpoint == "limits" {
+				HandleLimits(rr, req)
+				if rr.Code != tt.expectedStatus {
+					t.Errorf("HandleLimits expected status %d, got %d", tt.expectedStatus, rr.Code)
+				}
+				if tt.method == "GET" && rr.Code == http.StatusOK {
+					var limits map[string]string
+					json.Unmarshal(rr.Body.Bytes(), &limits)
+					if limits["cpu"] != "1000m" || limits["memory"] != "1Gi" {
+						t.Errorf("expected cpu=1000m memory=1Gi, got %v", limits)
+					}
+				}
+			} else {
+				HandleMetrics(rr, req)
+				if rr.Code != tt.expectedStatus {
+					t.Errorf("HandleMetrics expected status %d, got %d", tt.expectedStatus, rr.Code)
+				}
+			}
+		})
 	}
 }
