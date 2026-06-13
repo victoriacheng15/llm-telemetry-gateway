@@ -15,7 +15,9 @@ func TestFeatures(t *testing.T) {
 		Name: "LLM Telemetry Gateway E2E Suite",
 		ScenarioInitializer: func(ctx *godog.ScenarioContext) {
 			support.InitializeScenario(ctx, state)
-			step_definitions.RegisterSteps(ctx, state)
+			step_definitions.RegisterCommonSteps(ctx, state)
+			step_definitions.RegisterPIISteps(ctx, state)
+			step_definitions.RegisterProxySteps(ctx, state)
 		},
 		Options: &godog.Options{
 			Format:   "pretty",
