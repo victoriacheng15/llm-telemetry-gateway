@@ -36,6 +36,7 @@ lint: ## Run all linters
 
 test: ## Run all tests
 	@$(MAKE) test-go
+	@$(MAKE) test-bdd
 	@$(MAKE) test-py
 
 fmt: ## Format all code
