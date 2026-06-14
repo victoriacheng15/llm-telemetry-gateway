@@ -1,0 +1,36 @@
+# Showcase Landing Page Metadata
+header:
+  project_name: ""
+  site_url: ""
+
+system_specification:
+  objective: ""
+  stack: ""
+  pattern: ""
+  entry_point: ""
+  persistence_strategy: ""
+  observability: ""
+
+hero:
+  headline: ""
+  sub_headline: ""
+  brief_description: ""
+  cta_text: ""
+  cta_link: ""
+
+what_is:
+  title: ""
+  content: []
+
+key_features:
+  title: ""
+  features: []
+
+why_it_matters:
+  title: ""
+  points: []
+
+footer:
+  author: ""
+  github_link: ""
+  linkedin_link: ""

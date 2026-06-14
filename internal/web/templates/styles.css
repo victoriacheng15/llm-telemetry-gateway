@@ -1,0 +1,83 @@
+/* CSS Reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+img, picture, video, canvas, svg {
+  display: block;
+  max-width: 100%;
+}
+
+input, button, textarea, select {
+  font: inherit;
+}
+
+p, h1, h2, h3, h4, h5, h6 {
+  overflow-wrap: break-word;
+}
+
+:root {
+  /* Canvas Background */
+  --bg-canvas: hsl(222, 47%, 6%);
+  --bg-card: rgba(16, 22, 35, 0.6);
+  --border-card: rgba(255, 255, 255, 0.08);
+
+  /* Core Accents (Maximum 3) */
+  --color-primary: hsl(182, 100%, 50%);     /* Neon Cyan */
+  --color-secondary: hsl(271, 100%, 70%);   /* Vibrant Violet (WCAG Compliant) */
+
+  /* Typography */
+  --text-primary: hsl(210, 40%, 98%);
+  --text-secondary: hsl(215, 16%, 65%);
+
+  /* Spacing Tokens */
+  --space-sm: 1rem;
+  --space-md: 1.5rem;
+  --space-lg: 2rem;
+  --space-xl: 3rem;
+
+  /* Visual Utility Tokens */
+  --card-blur: blur(12px);
+  --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --border-radius-lg: 12px;
+}
+
+/* Layout Guidelines: Spacing via Flex gap, padding only for edge offsets */
+body, 
+.showcase-container, 
+.showcase-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);       /* Sibling separation handled exclusively by flex gap */
+  padding: var(--space-md);   /* Padding used only for page edge clearance (no browser-edge touching) */
+}
+
+/* Card Style (Arranged in a vertical column stack) */
+.card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);       /* Flex gap between stacked cards */
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);       /* Inner spacing */
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--border-radius-lg);
+  backdrop-filter: var(--card-blur);
+  -webkit-backdrop-filter: var(--card-blur);
+  padding: var(--space-md);
+  transition: var(--transition-smooth);
+}
