@@ -1,4 +1,4 @@
-package web
+package showcase
 
 type SiteConfig struct {
 	Header       HeaderConfig        `yaml:"header"`

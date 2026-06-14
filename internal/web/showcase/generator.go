@@ -1,4 +1,4 @@
-package web
+package showcase
 
 import (
 	"html/template"
