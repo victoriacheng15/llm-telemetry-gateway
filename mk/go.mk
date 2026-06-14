@@ -1,6 +1,6 @@
 # Go Runtime Makefile Targets
 
-.PHONY: lint-go test-go test-bdd cov-go fmt-go build-go
+.PHONY: lint-go test-go test-bdd cov-go fmt-go build-go build-showcase
 
 lint-go: ## Lint Go code
 	@echo "==> Linting Go code..."
@@ -26,3 +26,10 @@ fmt-go: ## Format Go code
 build-go: ## Build the Go gateway binary statically
 	@echo "==> Building Go gateway binary..."
 	CGO_ENABLED=0 go build -ldflags "-extldflags -static" -o bin/gateway cmd/gateway/main.go
+
+build-showcase: ## Build the showcase static site
+	@echo "==> Preparing dist directory..."
+	rm -rf dist
+	mkdir -p dist
+	@echo "==> Building showcase static site..."
+	go run cmd/showcase/main.go
