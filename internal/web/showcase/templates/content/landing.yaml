@@ -1,36 +1,54 @@
-# Showcase Landing Page Metadata
 header:
-  project_name: ""
-  site_url: ""
+  project_name: "LLM Telemetry Gateway"
+  site_url: "https://victoriacheng15.github.io/llm-telemetry-gateway"
 
 system_specification:
-  objective: ""
-  stack: ""
-  pattern: ""
-  entry_point: ""
-  persistence_strategy: ""
-  observability: ""
+  objective: "A low-overhead Go completions proxy with automated PII masking, namespaced pod-level telemetry pipelines, and closed-loop AIOps diagnostics powered by Ollama."
+  stack: "Go, Python, OTel Collector, Prometheus, Grafana, Kubernetes (K3s), Chaos Mesh, Ollama"
+  pattern: "Data Plane Proxy with Sidecar AIOps Diagnostics"
+  entry_point: "cmd/gateway/main.go (Proxy) / internal/sidecar/policy.py (AIOps)"
+  persistence_strategy: "Shared emptyDir volume for Unix Domain Sockets, crash-detection state tracking, and local diagnostics logs"
+  observability: "cgroups CPU, cgroups memory, OpenTelemetry, Server-Sent Events, log streaming"
 
 hero:
-  headline: ""
-  sub_headline: ""
-  brief_description: ""
-  cta_text: ""
-  cta_link: ""
+  headline: "Intelligent Observability & Privacy for LLMs"
+  sub_headline: "A secure completions proxy with local AIOps diagnostics and automated PII masking."
+  brief_description: "A sandbox exploring AI-assisted incident analysis, real-time PII sanitization, and automated root-cause diagnostics using a local LLM."
+  cta_text: "Explore on GitHub"
+  cta_link: "https://github.com/victoriacheng15/llm-telemetry-gateway"
 
 what_is:
-  title: ""
-  content: []
+  title: "Securing and Observing LLM Traffic"
+  content:
+    - "LLM Telemetry Gateway is a reverse proxy designed to secure LLM prompt streams by detecting and masking PII (such as SSNs and Credit Cards) at the pod boundary."
+    - "It deploys an autonomous Python AIOps sidecar that continuously monitors telemetry, detects performance anomalies, and queries a local Ollama LLM to generate instant root-cause reports."
+    - "The system provides a controlled sandbox to evaluate automated incident analysis and test resiliency under live cluster fault injections via Chaos Mesh."
 
 key_features:
-  title: ""
-  features: []
+  title: "Gateway Signals"
+  features:
+    - name: "PII Masking Proxy"
+      description: "Intercepts and redacts sensitive information (SSNs, credit cards) from prompt payloads before forwarding to the LLM backend."
+      icon: "eye-off"
+    - name: "Pod-Level Telemetry"
+      description: "Extracts real-time, namespaced memory and CPU utilization from cgroups to avoid host-level data contamination."
+      icon: "activity"
+    - name: "Autonomous AIOps"
+      description: "Invokes a local Ollama LLM post-restart or during latency spikes to analyze logs and diagnose root causes automatically."
+      icon: "cpu"
+    - name: "Chaos Resilience"
+      description: "Integrates Chaos Mesh to simulate network delays and sidecar crash scenarios, validating system self-healing."
+      icon: "refresh"
 
 why_it_matters:
-  title: ""
-  points: []
+  title: "Why It Matters"
+  points:
+    - "Demonstrates ownership of hybrid Go/Python architectures and namespaced Kubernetes orchestration."
+    - "Demonstrates AI-assisted operations by integrating local LLMs for automated incident triage and diagnostics."
+    - "Ensures data compliance at the edge by sanitizing PII before it reaches external model providers."
+    - "Maintains transparency through structured documentation and reproducible Kubernetes (K3s) setups."
 
 footer:
-  author: ""
-  github_link: ""
-  linkedin_link: ""
+  author: "Victoria Cheng"
+  github_link: "https://github.com/victoriacheng15"
+  linkedin_link: "https://www.linkedin.com/in/victoriacheng15/"

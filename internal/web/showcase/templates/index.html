@@ -1,14 +1,56 @@
 {{ define "content" }}
-<!-- Hero Section -->
-
 <!-- Architecture Section -->
-
-<!-- About Section -->
-
-<!-- Key Features Section -->
+<section class="showcase-section">
+  <h3>Architecture</h3>
+  <pre class="card">
+  ┌────────┐     ┌─────────────────────┐     ┌────────────────────┐
+  │ Client │ ──> │ Gateway Proxy (Go)  │ ──> │ Ollama LLM Backend │
+  └────────┘     └─────────────────────┘     └────────────────────┘
+                      │             │                 ▲
+       (Sends metrics)│             ▼ (UDS Socket)    │ (RCA queries)
+                      │  ┌─────────────────────┐      │
+                      │  │ Sidecar Policy (Py) │ ─────┘
+                      ▼  └─────────────────────┘
+               ┌───────────┐      ▲
+               │ OTel      │      │ (Scrapes metrics)
+               │ Collector │ ─────┘
+               └───────────┘
+  </pre>
+</section>
 
 <!-- Demonstration Video Section -->
 <!-- TODO: Insert recorded Chaos game day and PII masking demo video/GIF here when available -->
 
+<!-- About Section -->
+<section class="showcase-section">
+  <h3>{{ .Landing.WhatIs.Title }}</h3>
+  <ul>
+    {{ range .Landing.WhatIs.Content }}
+    <li>{{ . }}</li>
+    {{ end }}
+  </ul>
+</section>
+
+<!-- Key Features Section -->
+<section class="showcase-section">
+  <h3>{{ .Landing.KeyFeatures.Title }}</h3>
+  <div class="card-stack">
+    {{ range .Landing.KeyFeatures.Features }}
+    <article class="card">
+      <h4>{{ .Name }}</h4>
+      <p>{{ .Description }}</p>
+    </article>
+    {{ end }}
+  </div>
+</section>
+
 <!-- Why It Matters Section -->
+<section class="showcase-section">
+  <h3>{{ .Landing.WhyItMatters.Title }}</h3>
+  <ul>
+    {{ range .Landing.WhyItMatters.Points }}
+    <li>{{ . }}</li>
+    {{ end }}
+  </ul>
+</section>
 {{ end }}

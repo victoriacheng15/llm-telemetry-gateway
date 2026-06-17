@@ -15,10 +15,6 @@
 - **Persistence Strategy**: {{ .Landing.SystemSpec.PersistenceStrategy }}
 - **Observability**: {{ .Landing.SystemSpec.Observability }}
 
-## Discovery & Registry
-
-- **Machine Registry**: {{ .Landing.Header.SiteURL }}{{ .Landing.SystemSpec.MachineRegistry }}
-
 ## Key
 
 - **GitHub Repository**: {{ .Landing.Hero.CTALink }}
