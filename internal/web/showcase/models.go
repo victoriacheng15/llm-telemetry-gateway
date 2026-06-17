@@ -22,7 +22,6 @@ type SystemSpecification struct {
 	EntryPoint          string `yaml:"entry_point"`
 	PersistenceStrategy string `yaml:"persistence_strategy"`
 	Observability       string `yaml:"observability"`
-	MachineRegistry     string `yaml:"machine_registry"`
 }
 
 type HeroConfig struct {

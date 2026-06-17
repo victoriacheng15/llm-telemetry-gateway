@@ -28,17 +28,17 @@ p, h1, h2, h3, h4, h5, h6 {
 
 :root {
   /* Canvas Background */
-  --bg-canvas: hsl(222, 47%, 6%);
-  --bg-card: rgba(16, 22, 35, 0.6);
-  --border-card: rgba(255, 255, 255, 0.08);
+  --bg-canvas: hsl(20, 10%, 4%);             /* Deep Obsidian Stone (#0c0a09) */
+  --bg-card: rgba(28, 25, 23, 0.6);          /* Warm Stone-900 at 60% (#1c1917) */
+  --border-card: rgba(255, 255, 255, 0.05);  /* Subtle stone border */
 
   /* Core Accents (Maximum 3) */
-  --color-primary: hsl(182, 100%, 50%);     /* Neon Cyan */
-  --color-secondary: hsl(271, 100%, 70%);   /* Vibrant Violet (WCAG Compliant) */
+  --color-primary: hsl(14, 100%, 57%);       /* Neon Orange-Red (#ff4500) */
+  --color-secondary: hsl(47, 100%, 60%);     /* Neon Amber (#ffcb2b) */
 
   /* Typography */
-  --text-primary: hsl(210, 40%, 98%);
-  --text-secondary: hsl(215, 16%, 65%);
+  --text-primary: hsl(20, 20%, 98%);         /* Warm White (#fafaf9) */
+  --text-secondary: hsl(20, 10%, 75%);       /* Warm Gray (#d6d3d1) */
 
   /* Spacing Tokens */
   --space-sm: 1rem;
@@ -59,7 +59,77 @@ body,
   display: flex;
   flex-direction: column;
   gap: var(--space-lg);       /* Sibling separation handled exclusively by flex gap */
-  padding: var(--space-md);   /* Padding used only for page edge clearance (no browser-edge touching) */
+}
+
+body {
+  padding: var(--space-lg);   /* Outermost boundary padding for page edge clearance */
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;        /* Centering content column using flex layout */
+}
+
+header, 
+main, 
+footer {
+  width: 100%;
+  max-width: 800px;           /* Standard limit width constraint */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+header {
+  gap: var(--space-sm);       /* Separate header title and subheadline */
+}
+
+h1, h2, h3, h4 {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+h1 {
+  font-size: 2.5rem;
+  border-bottom: 1px solid var(--border-card);
+}
+
+h2 {
+  font-size: 2rem;
+  color: var(--color-primary);
+}
+
+h3 {
+  font-size: 1.5rem;
+  color: var(--color-primary);
+}
+
+p {
+  color: var(--text-secondary);
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: var(--transition-smooth);
+}
+
+a:hover {
+  color: var(--color-secondary);
+}
+
+ul {
+  list-style-type: disc;
+  padding-left: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+li {
+  color: var(--text-secondary);
+  line-height: 1.6;
 }
 
 /* Card Style (Arranged in a vertical column stack) */
@@ -79,5 +149,108 @@ body,
   backdrop-filter: var(--card-blur);
   -webkit-backdrop-filter: var(--card-blur);
   padding: var(--space-md);
+  transition: var(--transition-smooth);
+}
+
+.card h4 {
+  color: var(--color-secondary);
+}
+
+.card p {
+  font-size: 0.95rem;
+}
+
+/* CTA Button Styles */
+.cta-button {
+  display: inline-block;
+  padding: 0.75rem 1.5rem;
+  background-color: transparent;
+  border: 2px solid var(--color-primary);
+  color: var(--color-primary);
+  border-radius: var(--border-radius-lg);
+  font-weight: 600;
+  transition: var(--transition-smooth);
+}
+
+.cta-button:hover {
+  background-color: var(--color-primary);
+  color: var(--bg-canvas);
+  border-color: var(--color-primary);
+}
+
+pre.card {
+  font-family: monospace;
+  white-space: pre;
+  overflow-x: auto;
+  line-height: 1.4;
+  color: var(--text-primary);
+  font-size: 1.15rem; /* Slightly larger on full viewport */
+}
+
+@media (max-width: 768px) {
+  pre.card {
+    font-size: 0.75rem; /* Scale down on tablets and small laptops */
+  }
+}
+
+@media (max-width: 600px) {
+  pre.card {
+    font-size: 0.6rem;  /* Scale down further on standard mobile screens */
+  }
+}
+
+@media (max-width: 480px) {
+  pre.card {
+    font-size: 0.5rem;  /* Scale down to avoid overflow on narrow screens */
+  }
+}
+
+/* Footer Utility Styles */
+.py-8 {
+  padding-top: 2rem;
+  padding-bottom: 2rem;
+}
+
+.pt-6 {
+  padding-top: 1.5rem;
+}
+
+.border-t {
+  border-top: 1px solid var(--border-card);
+}
+
+.flex {
+  display: flex;
+}
+
+.justify-center {
+  justify-content: center;
+}
+
+.items-center {
+  align-items: center;
+}
+
+.gap-6 {
+  gap: 1.5rem;
+}
+
+.gap-4 {
+  gap: 1rem;
+}
+
+.text-zinc-500 {
+  color: var(--text-secondary);
+}
+
+.text-xs {
+  font-size: 0.75rem;
+}
+
+.hover\:text-cyan-400:hover {
+  color: var(--color-primary);
+}
+
+.transition-colors {
   transition: var(--transition-smooth);
 }
