@@ -2,7 +2,7 @@ header:
   project_name: "LLM Telemetry Gateway"
   site_url: "https://victoriacheng15.github.io/llm-telemetry-gateway"
 
-system_specification:
+llms:
   objective: "A low-overhead Go completions proxy with automated PII masking, namespaced pod-level telemetry pipelines, and closed-loop AIOps diagnostics powered by Ollama."
   stack: "Go, Python, OTel Collector, Prometheus, Grafana, Kubernetes (K3s), Chaos Mesh, Ollama"
   pattern: "Data Plane Proxy with Sidecar AIOps Diagnostics"
@@ -10,43 +10,102 @@ system_specification:
   persistence_strategy: "Shared emptyDir volume for Unix Domain Sockets, crash-detection state tracking, and local diagnostics logs"
   observability: "cgroups CPU, cgroups memory, OpenTelemetry, Server-Sent Events, log streaming"
 
-hero:
-  headline: "Intelligent Observability & Privacy for LLMs"
-  sub_headline: "A secure completions proxy with local AIOps diagnostics and automated PII masking."
-  brief_description: "A sandbox exploring AI-assisted incident analysis, real-time PII sanitization, and automated root-cause diagnostics using a local LLM."
-  cta_text: "Explore on GitHub"
-  cta_link: "https://github.com/victoriacheng15/llm-telemetry-gateway"
+# Core Components & Logic
+tech:
+  proxy_data_plane:
+    description: "Low-overhead Go completions proxy with automated regex-based PII masking at the pod boundary."
+  aiops_sidecar:
+    description: "Autonomous Python diagnostics sidecar integrating with Ollama for closed-loop incident analysis."
+  pod_boundary_instrumentation:
+    description: "Resource telemetry extracted from namespaced cgroups to prevent host-level metric leakage."
 
-what_is:
-  title: "Securing and Observing LLM Traffic"
-  content:
-    - "LLM Telemetry Gateway is a reverse proxy designed to secure LLM prompt streams by detecting and masking PII (such as SSNs and Credit Cards) at the pod boundary."
-    - "It deploys an autonomous Python AIOps sidecar that continuously monitors telemetry, detects performance anomalies, and queries a local Ollama LLM to generate instant root-cause reports."
-    - "The system provides a controlled sandbox to evaluate automated incident analysis and test resiliency under live cluster fault injections via Chaos Mesh."
+# Validation & Resiliency Testing
+proof:
+  chaos_resilience:
+    description: "System robustness validated via automated Chaos Mesh fault injections, simulating sidecar failures and network delays."
+  telemetry_pipeline:
+    description: "Structured OpenTelemetry Collector pipeline processing pod metrics and streaming real-time diagnostics."
+  declarative_infrastructure:
+    description: "Reproducible local deployment configurations with single-command cluster brings-up."
 
-key_features:
-  title: "Gateway Signals"
-  features:
-    - name: "PII Masking Proxy"
-      description: "Intercepts and redacts sensitive information (SSNs, credit cards) from prompt payloads before forwarding to the LLM backend."
-      icon: "eye-off"
-    - name: "Pod-Level Telemetry"
-      description: "Extracts real-time, namespaced memory and CPU utilization from cgroups to avoid host-level data contamination."
-      icon: "activity"
-    - name: "Autonomous AIOps"
-      description: "Invokes a local Ollama LLM post-restart or during latency spikes to analyze logs and diagnose root causes automatically."
-      icon: "cpu"
-    - name: "Chaos Resilience"
-      description: "Integrates Chaos Mesh to simulate network delays and sidecar crash scenarios, validating system self-healing."
-      icon: "refresh"
+# Design Trade-offs & Verification Logs
+reach:
+  # Architecture Blueprint
+  architecture_blueprint:
+    diagram_ascii: |4
+             ┌────────┐             ┌────────────┐
+             │ Client │             │ Chaos Mesh │
+             └────────┘             └────────────┘
+                   │                       │
+                   │ (Completions)         ├────────────────────────┐
+                   ▼                       ▼ (Injects faults)       ▼ (Injects faults)
+            ┌─────────────────────┐ <──────┘               ┌─────────────────────┐
+            │ Gateway Proxy (Go)  │ <====================> │ Sidecar Policy (Py) │
+            └─────────────────────┘      (UDS Socket)      └─────────────────────┘
+                   │                                            │             │
+                   │ (Sends metrics)           (Scrapes metrics)│             │ (RCA queries)
+                   ▼                                            ▼             ▼
+            ┌───────────┐ <─────────────────────────────────────┘      ┌────────────┐
+            │ OTel      │                                              │ Ollama LLM │
+            │ Collector │                                              └────────────┘
+            └───────────┘
+  humble_pivots:
+    - title: "Sidecar vs In-Process Diagnostics"
+      description: "Transitioned from writing custom in-process diagnosis logic in Go to deploying an autonomous Python sidecar sharing emptyDir volumes. This separated the data-plane proxy concerns from the diagnostic LLM integration, ensuring gateway uptime during heavy model evaluation cycles."
+  objective_clarity:
+    description: "Objective analysis of AI-assisted incident triage under network latency and pod restart chaos injections."
+  verifiable_outputs:
+    - title: "Behavior-Driven End-to-End Tests"
+      terminal_output: |
+        Feature: PII Masking
+          As a security-conscious completions proxy
+          I want to detect and redact sensitive PII before forwarding payloads
+          So that user privacy is preserved
 
-why_it_matters:
-  title: "Why It Matters"
-  points:
-    - "Demonstrates ownership of hybrid Go/Python architectures and namespaced Kubernetes orchestration."
-    - "Demonstrates AI-assisted operations by integrating local LLMs for automated incident triage and diagnostics."
-    - "Ensures data compliance at the edge by sanitizing PII before it reaches external model providers."
-    - "Maintains transparency through structured documentation and reproducible Kubernetes (K3s) setups."
+          Scenario: SSN is masked in the prompt
+            Given the PII policy engine is running
+            And the Completions Proxy is running
+            When I send a completion request with prompt "My SSN is 123-45-6789"
+            Then the response should contain "My SSN is ***-**-****"
+            And the response status code should be 200
+
+          Scenario: Credit card number is masked in the prompt
+            Given the PII policy engine is running
+            And the Completions Proxy is running
+            When I send a completion request with prompt "Pay using card 1234-5678-9012-3456"
+            Then the response should contain "Pay using card ****-****-****-****"
+            And the response status code should be 200
+
+        8 scenarios (8 passed)
+        38 steps (38 passed)
+        PASS
+        ok  	llm-telemetry-gateway/e2e	0.518s
+    - title: "Go Core Proxy Unit Tests"
+      terminal_output: |
+        === RUN   TestHandleCompletions
+        --- PASS: TestHandleCompletions (0.50s)
+        === RUN   TestHandleHealthz
+        --- PASS: TestHandleHealthz (0.00s)
+        === RUN   TestHandleReadyz
+        --- PASS: TestHandleReadyz (0.00s)
+        === RUN   TestRun
+        --- PASS: TestRun (0.20s)
+        === RUN   TestHandleChaosStress
+        --- PASS: TestHandleChaosStress (0.02s)
+        === RUN   TestHandleChaosNetwork
+        --- PASS: TestHandleChaosNetwork (0.01s)
+        === RUN   TestHandleDiagnostics
+        --- PASS: TestHandleDiagnostics (0.00s)
+        === RUN   TestHandleRCALogStream
+        --- PASS: TestHandleRCALogStream (0.05s)
+        === RUN   TestHandleMaskTest
+        --- PASS: TestHandleMaskTest (0.00s)
+        === RUN   TestCollectSystemMetrics
+        --- PASS: TestCollectSystemMetrics (0.00s)
+        === RUN   TestHandleMetricsAndLimits
+        --- PASS: TestHandleMetricsAndLimits (0.00s)
+        PASS
+        ok  	llm-telemetry-gateway/internal/gateway	0.812s
 
 footer:
   author: "Victoria Cheng"

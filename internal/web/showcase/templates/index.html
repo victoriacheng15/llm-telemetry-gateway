@@ -1,56 +1,69 @@
 {{ define "content" }}
 <!-- Architecture Section -->
 <section class="showcase-section">
-  <h3>Architecture</h3>
-  <pre class="card">
-  ┌────────┐     ┌─────────────────────┐     ┌────────────────────┐
-  │ Client │ ──> │ Gateway Proxy (Go)  │ ──> │ Ollama LLM Backend │
-  └────────┘     └─────────────────────┘     └────────────────────┘
-                      │             │                 ▲
-       (Sends metrics)│             ▼ (UDS Socket)    │ (RCA queries)
-                      │  ┌─────────────────────┐      │
-                      │  │ Sidecar Policy (Py) │ ─────┘
-                      ▼  └─────────────────────┘
-               ┌───────────┐      ▲
-               │ OTel      │      │ (Scrapes metrics)
-               │ Collector │ ─────┘
-               └───────────┘
-  </pre>
+  <h3>Architecture Blueprint</h3>
+  <pre class="card">{{ .Landing.Reach.ArchitectureBlueprint.DiagramASCII }}</pre>
 </section>
 
-<!-- Demonstration Video Section -->
-<!-- TODO: Insert recorded Chaos game day and PII masking demo video/GIF here when available -->
-
-<!-- About Section -->
+<!-- Tech Section -->
 <section class="showcase-section">
-  <h3>{{ .Landing.WhatIs.Title }}</h3>
-  <ul>
-    {{ range .Landing.WhatIs.Content }}
-    <li>{{ . }}</li>
-    {{ end }}
-  </ul>
-</section>
-
-<!-- Key Features Section -->
-<section class="showcase-section">
-  <h3>{{ .Landing.KeyFeatures.Title }}</h3>
+  <h3>Core Components & Logic</h3>
   <div class="card-stack">
-    {{ range .Landing.KeyFeatures.Features }}
     <article class="card">
-      <h4>{{ .Name }}</h4>
-      <p>{{ .Description }}</p>
+      <h4>Proxy Data Plane</h4>
+      <p>{{ .Landing.Tech.ProxyDataPlane.Description }}</p>
     </article>
-    {{ end }}
+    <article class="card">
+      <h4>AIOps Sidecar</h4>
+      <p>{{ .Landing.Tech.AIOpsSidecar.Description }}</p>
+    </article>
+    <article class="card">
+      <h4>Pod-Boundary Instrumentation</h4>
+      <p>{{ .Landing.Tech.PodBoundaryInstrumentation.Description }}</p>
+    </article>
   </div>
 </section>
 
-<!-- Why It Matters Section -->
+<!-- Proof Section -->
 <section class="showcase-section">
-  <h3>{{ .Landing.WhyItMatters.Title }}</h3>
-  <ul>
-    {{ range .Landing.WhyItMatters.Points }}
-    <li>{{ . }}</li>
+  <h3>Validation & Resiliency Testing</h3>
+  <div class="card-stack">
+    <article class="card">
+      <h4>Chaos Resilience</h4>
+      <p>{{ .Landing.Proof.ChaosResilience.Description }}</p>
+    </article>
+    <article class="card">
+      <h4>Telemetry Pipeline</h4>
+      <p>{{ .Landing.Proof.TelemetryPipeline.Description }}</p>
+    </article>
+    <article class="card">
+      <h4>Declarative Infrastructure</h4>
+      <p>{{ .Landing.Proof.DeclarativeInfrastructure.Description }}</p>
+    </article>
+  </div>
+</section>
+
+<!-- Reach Section -->
+<section class="showcase-section">
+  <h3>Design Trade-offs & Verification Logs</h3>
+  <div class="card-stack">
+    {{ range .Landing.Reach.HumblePivots }}
+    <article class="card">
+      <h4>The Humble Pivot: {{ .Title }}</h4>
+      <p>{{ .Description }}</p>
+    </article>
     {{ end }}
-  </ul>
+    <article class="card">
+      <h4>Objective Clarity</h4>
+      <p>{{ .Landing.Reach.ObjectiveClarity.Description }}</p>
+    </article>
+    <article class="card">
+      <h4>Verifiable Execution Outputs</h4>
+      {{ range .Landing.Reach.VerifiableOutputs }}
+      <p class="terminal-title">{{ .Title }}</p>
+      <pre class="terminal-log"><code>{{ .TerminalOutput }}</code></pre>
+      {{ end }}
+    </article>
+  </div>
 </section>
 {{ end }}

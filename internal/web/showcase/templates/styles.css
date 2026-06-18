@@ -28,17 +28,17 @@ p, h1, h2, h3, h4, h5, h6 {
 
 :root {
   /* Canvas Background */
-  --bg-canvas: hsl(20, 10%, 4%);             /* Deep Obsidian Stone (#0c0a09) */
-  --bg-card: rgba(28, 25, 23, 0.6);          /* Warm Stone-900 at 60% (#1c1917) */
-  --border-card: rgba(255, 255, 255, 0.05);  /* Subtle stone border */
+  --bg-canvas: hsl(20, 8%, 14%);             /* Warm soft charcoal */
+  --bg-card: rgba(44, 40, 37, 0.75);         /* Soft warm stone card */
+  --border-card: rgba(255, 255, 255, 0.07);  /* Very soft light boundary line */
 
   /* Core Accents (Maximum 3) */
-  --color-primary: hsl(14, 100%, 57%);       /* Neon Orange-Red (#ff4500) */
-  --color-secondary: hsl(47, 100%, 60%);     /* Neon Amber (#ffcb2b) */
+  --color-primary: hsl(14, 95%, 68%);        /* Soft neon orange-red (WCAG AAA compliant) */
+  --color-secondary: hsl(38, 90%, 65%);      /* Soft warm amber (WCAG AAA compliant) */
 
   /* Typography */
-  --text-primary: hsl(20, 20%, 98%);         /* Warm White (#fafaf9) */
-  --text-secondary: hsl(20, 10%, 75%);       /* Warm Gray (#d6d3d1) */
+  --text-primary: hsl(30, 20%, 93%);         /* Warm off-white */
+  --text-secondary: hsl(20, 12%, 80%);       /* Muted warm stone gray */
 
   /* Spacing Tokens */
   --space-sm: 1rem;
@@ -52,37 +52,37 @@ p, h1, h2, h3, h4, h5, h6 {
   --border-radius-lg: 12px;
 }
 
-/* Layout Guidelines: Spacing via Flex gap, padding only for edge offsets */
+/* Layout Guidelines: Spacing via Flex gap, padding only for page edge offsets */
 body, 
 .showcase-container, 
 .showcase-section {
   display: flex;
   flex-direction: column;
-  gap: var(--space-lg);       /* Sibling separation handled exclusively by flex gap */
+  gap: var(--space-lg);
 }
 
 body {
-  padding: var(--space-lg);   /* Outermost boundary padding for page edge clearance */
+  padding: var(--space-lg);
   background-color: var(--bg-canvas);
   color: var(--text-primary);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   display: flex;
   flex-direction: column;
-  align-items: center;        /* Centering content column using flex layout */
+  align-items: center;
 }
 
 header, 
 main, 
 footer {
   width: 100%;
-  max-width: 800px;           /* Standard limit width constraint */
+  max-width: 800px;
   display: flex;
   flex-direction: column;
   gap: var(--space-lg);
 }
 
 header {
-  gap: var(--space-sm);       /* Separate header title and subheadline */
+  gap: var(--space-sm);
 }
 
 h1, h2, h3, h4 {
@@ -136,13 +136,13 @@ li {
 .card-stack {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);       /* Flex gap between stacked cards */
+  gap: var(--space-sm);
 }
 
 .card {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);       /* Inner spacing */
+  gap: var(--space-sm);
   background: var(--bg-card);
   border: 1px solid var(--border-card);
   border-radius: var(--border-radius-lg);
@@ -182,26 +182,26 @@ pre.card {
   font-family: monospace;
   white-space: pre;
   overflow-x: auto;
-  line-height: 1.4;
+  line-height: 1.25;
   color: var(--text-primary);
-  font-size: 1.15rem; /* Slightly larger on full viewport */
+  font-size: 0.85rem;                       /* Crisp size for layout diagrams on desktop */
 }
 
 @media (max-width: 768px) {
   pre.card {
-    font-size: 0.75rem; /* Scale down on tablets and small laptops */
+    font-size: 0.75rem;                     /* Scale down on tablets and small laptops */
   }
 }
 
 @media (max-width: 600px) {
   pre.card {
-    font-size: 0.6rem;  /* Scale down further on standard mobile screens */
+    font-size: 0.6rem;                      /* Scale down further on standard mobile screens */
   }
 }
 
 @media (max-width: 480px) {
   pre.card {
-    font-size: 0.5rem;  /* Scale down to avoid overflow on narrow screens */
+    font-size: 0.5rem;                      /* Scale down to avoid overflow on narrow screens */
   }
 }
 
@@ -232,11 +232,11 @@ pre.card {
 }
 
 .gap-6 {
-  gap: 1.5rem;
+  gap: var(--space-md);
 }
 
 .gap-4 {
-  gap: 1rem;
+  gap: var(--space-sm);
 }
 
 .text-zinc-500 {
@@ -247,10 +247,23 @@ pre.card {
   font-size: 0.75rem;
 }
 
-.hover\:text-cyan-400:hover {
-  color: var(--color-primary);
+
+/* Verification Output Terminal Styles */
+.terminal-title {
+  color: var(--color-secondary);
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
 }
 
-.transition-colors {
-  transition: var(--transition-smooth);
+.terminal-log {
+  font-family: monospace;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  padding: 1rem;
+  background-color: rgba(12, 10, 9, 0.55);
+  border: 1px solid var(--border-card);
+  border-radius: var(--border-radius-lg);
+  color: var(--text-primary);
+  line-height: 1.4;
 }

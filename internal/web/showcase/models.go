@@ -1,13 +1,12 @@
 package showcase
 
 type SiteConfig struct {
-	Header       HeaderConfig        `yaml:"header"`
-	SystemSpec   SystemSpecification `yaml:"system_specification"`
-	Hero         HeroConfig          `yaml:"hero"`
-	WhatIs       WhatIsConfig        `yaml:"what_is"`
-	KeyFeatures  KeyFeaturesConfig   `yaml:"key_features"`
-	WhyItMatters WhyItMattersConfig  `yaml:"why_it_matters"`
-	Footer       FooterConfig        `yaml:"footer"`
+	Header HeaderConfig        `yaml:"header"`
+	LLMS   SystemSpecification `yaml:"llms"`
+	Tech   TechConfig          `yaml:"tech"`
+	Proof  ProofConfig         `yaml:"proof"`
+	Reach  ReachConfig         `yaml:"reach"`
+	Footer FooterConfig        `yaml:"footer"`
 }
 
 type HeaderConfig struct {
@@ -24,33 +23,41 @@ type SystemSpecification struct {
 	Observability       string `yaml:"observability"`
 }
 
-type HeroConfig struct {
-	Headline         string `yaml:"headline"`
-	SubHeadline      string `yaml:"sub_headline"`
-	BriefDescription string `yaml:"brief_description"`
-	CTAText          string `yaml:"cta_text"`
-	CTALink          string `yaml:"cta_link"`
+type TechConfig struct {
+	ProxyDataPlane             PillarConfig `yaml:"proxy_data_plane"`
+	AIOpsSidecar               PillarConfig `yaml:"aiops_sidecar"`
+	PodBoundaryInstrumentation PillarConfig `yaml:"pod_boundary_instrumentation"`
 }
 
-type WhatIsConfig struct {
-	Title   string   `yaml:"title"`
-	Content []string `yaml:"content"`
-}
-
-type KeyFeaturesConfig struct {
-	Title    string    `yaml:"title"`
-	Features []Feature `yaml:"features"`
-}
-
-type Feature struct {
-	Name        string `yaml:"name"`
+type PillarConfig struct {
 	Description string `yaml:"description"`
-	Icon        string `yaml:"icon"`
 }
 
-type WhyItMattersConfig struct {
-	Title  string   `yaml:"title"`
-	Points []string `yaml:"points"`
+type ProofConfig struct {
+	ChaosResilience           PillarConfig `yaml:"chaos_resilience"`
+	TelemetryPipeline         PillarConfig `yaml:"telemetry_pipeline"`
+	DeclarativeInfrastructure PillarConfig `yaml:"declarative_infrastructure"`
+}
+
+type ReachConfig struct {
+	ArchitectureBlueprint ArchitectureBlueprintConfig `yaml:"architecture_blueprint"`
+	HumblePivots          []HumblePivotConfig         `yaml:"humble_pivots"`
+	ObjectiveClarity      PillarConfig                `yaml:"objective_clarity"`
+	VerifiableOutputs     []VerifiableOutputConfig    `yaml:"verifiable_outputs"`
+}
+
+type ArchitectureBlueprintConfig struct {
+	DiagramASCII string `yaml:"diagram_ascii"`
+}
+
+type HumblePivotConfig struct {
+	Title       string `yaml:"title"`
+	Description string `yaml:"description"`
+}
+
+type VerifiableOutputConfig struct {
+	Title          string `yaml:"title"`
+	TerminalOutput string `yaml:"terminal_output"`
 }
 
 type FooterConfig struct {
