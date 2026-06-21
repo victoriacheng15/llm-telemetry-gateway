@@ -2,25 +2,19 @@
 <!-- Architecture Section -->
 <section class="showcase-section">
   <h3>Architecture Blueprint</h3>
-  <pre class="card">{{ .Landing.Reach.ArchitectureBlueprint.DiagramASCII }}</pre>
+  <pre class="card">{{ .Landing.Architecture.DiagramASCII }}</pre>
 </section>
 
 <!-- Tech Section -->
 <section class="showcase-section">
   <h3>Core Components & Logic</h3>
   <div class="card-stack">
+    {{ range .Landing.Tech }}
     <article class="card">
-      <h4>Proxy Data Plane</h4>
-      <p>{{ .Landing.Tech.ProxyDataPlane.Description }}</p>
+      <h4>{{ .Title }}</h4>
+      <p>{{ .Description }}</p>
     </article>
-    <article class="card">
-      <h4>AIOps Sidecar</h4>
-      <p>{{ .Landing.Tech.AIOpsSidecar.Description }}</p>
-    </article>
-    <article class="card">
-      <h4>Pod-Boundary Instrumentation</h4>
-      <p>{{ .Landing.Tech.PodBoundaryInstrumentation.Description }}</p>
-    </article>
+    {{ end }}
   </div>
 </section>
 
@@ -28,18 +22,12 @@
 <section class="showcase-section">
   <h3>Validation & Resiliency Testing</h3>
   <div class="card-stack">
+    {{ range .Landing.Proof }}
     <article class="card">
-      <h4>Chaos Resilience</h4>
-      <p>{{ .Landing.Proof.ChaosResilience.Description }}</p>
+      <h4>{{ .Title }}</h4>
+      <p>{{ .Description }}</p>
     </article>
-    <article class="card">
-      <h4>Telemetry Pipeline</h4>
-      <p>{{ .Landing.Proof.TelemetryPipeline.Description }}</p>
-    </article>
-    <article class="card">
-      <h4>Declarative Infrastructure</h4>
-      <p>{{ .Landing.Proof.DeclarativeInfrastructure.Description }}</p>
-    </article>
+    {{ end }}
   </div>
 </section>
 
@@ -47,16 +35,23 @@
 <section class="showcase-section">
   <h3>Design Trade-offs & Verification Logs</h3>
   <div class="card-stack">
-    {{ range .Landing.Reach.HumblePivots }}
     <article class="card">
-      <h4>The Humble Pivot: {{ .Title }}</h4>
-      <p>{{ .Description }}</p>
+      <h4>Humble Pivots</h4>
+      <div class="pivots-list" style="display: flex; flex-direction: column; gap: var(--space-md);">
+        {{ range .Landing.Reach.HumblePivots }}
+        <div class="pivot-entry">
+          <h5 style="margin: 0 0 0.5rem 0; font-size: 1.1rem; color: var(--text-primary);">{{ .Title }}</h5>
+          <p style="margin: 0;">{{ .Description }}</p>
+        </div>
+        {{ end }}
+      </div>
     </article>
-    {{ end }}
+
     <article class="card">
       <h4>Objective Clarity</h4>
       <p>{{ .Landing.Reach.ObjectiveClarity.Description }}</p>
     </article>
+
     <article class="card">
       <h4>Verifiable Execution Outputs</h4>
       {{ range .Landing.Reach.VerifiableOutputs }}
