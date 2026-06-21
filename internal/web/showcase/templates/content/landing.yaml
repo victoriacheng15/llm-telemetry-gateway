@@ -10,48 +10,51 @@ llms:
   persistence_strategy: "Shared emptyDir volume for Unix Domain Sockets, crash-detection state tracking, and local diagnostics logs"
   observability: "cgroups CPU, cgroups memory, OpenTelemetry, Server-Sent Events, log streaming"
 
+# Architecture Blueprint
+architecture:
+  diagram_ascii: |4
+           ┌────────┐             ┌────────────┐
+           │ Client │             │ Chaos Mesh │
+           └────────┘             └────────────┘
+                 │                       │
+                 │ (Completions)         ├────────────────────────┐
+                 ▼                       ▼ (Injects faults)       ▼ (Injects faults)
+          ┌─────────────────────┐ <──────┘               ┌─────────────────────┐
+          │ Gateway Proxy (Go)  │ <====================> │ Sidecar Policy (Py) │
+          └─────────────────────┘      (UDS Socket)      └─────────────────────┘
+                 │                                            │             │
+                 │ (Sends metrics)           (Scrapes metrics)│             │ (RCA queries)
+                 ▼                                            ▼             ▼
+          ┌───────────┐ <─────────────────────────────────────┘      ┌────────────┐
+          │ OTel      │                                              │ Ollama LLM │
+          │ Collector │                                              └────────────┘
+          └───────────┘
+
 # Core Components & Logic
 tech:
-  proxy_data_plane:
+  - title: "Proxy Data Plane"
     description: "Low-overhead Go completions proxy with automated regex-based PII masking at the pod boundary."
-  aiops_sidecar:
+  - title: "AIOps Sidecar"
     description: "Autonomous Python diagnostics sidecar integrating with Ollama for closed-loop incident analysis."
-  pod_boundary_instrumentation:
+  - title: "Pod-Boundary Instrumentation"
     description: "Resource telemetry extracted from namespaced cgroups to prevent host-level metric leakage."
 
 # Validation & Resiliency Testing
 proof:
-  chaos_resilience:
+  - title: "Chaos Resilience"
     description: "System robustness validated via automated Chaos Mesh fault injections, simulating sidecar failures and network delays."
-  telemetry_pipeline:
+  - title: "Telemetry Pipeline"
     description: "Structured OpenTelemetry Collector pipeline processing pod metrics and streaming real-time diagnostics."
-  declarative_infrastructure:
+  - title: "Declarative Infrastructure"
     description: "Reproducible local deployment configurations with single-command cluster brings-up."
 
 # Design Trade-offs & Verification Logs
 reach:
-  # Architecture Blueprint
-  architecture_blueprint:
-    diagram_ascii: |4
-             ┌────────┐             ┌────────────┐
-             │ Client │             │ Chaos Mesh │
-             └────────┘             └────────────┘
-                   │                       │
-                   │ (Completions)         ├────────────────────────┐
-                   ▼                       ▼ (Injects faults)       ▼ (Injects faults)
-            ┌─────────────────────┐ <──────┘               ┌─────────────────────┐
-            │ Gateway Proxy (Go)  │ <====================> │ Sidecar Policy (Py) │
-            └─────────────────────┘      (UDS Socket)      └─────────────────────┘
-                   │                                            │             │
-                   │ (Sends metrics)           (Scrapes metrics)│             │ (RCA queries)
-                   ▼                                            ▼             ▼
-            ┌───────────┐ <─────────────────────────────────────┘      ┌────────────┐
-            │ OTel      │                                              │ Ollama LLM │
-            │ Collector │                                              └────────────┘
-            └───────────┘
   humble_pivots:
     - title: "Sidecar vs In-Process Diagnostics"
       description: "Transitioned from writing custom in-process diagnosis logic in Go to deploying an autonomous Python sidecar sharing emptyDir volumes. This separated the data-plane proxy concerns from the diagnostic LLM integration, ensuring gateway uptime during heavy model evaluation cycles."
+    - title: "BDD as an AI Development Guardrail"
+      description: "Introduced behavior-driven development via Gherkin and Godog as a strict system guardrail. This ensures that any AI-generated code modifications behave exactly as specified by the target security and routing policies, eliminating regression risks during automated development cycles."
   objective_clarity:
     description: "Objective analysis of AI-assisted incident triage under network latency and pod restart chaos injections."
   verifiable_outputs:
@@ -62,24 +65,26 @@ reach:
           I want to detect and redact sensitive PII before forwarding payloads
           So that user privacy is preserved
 
-          Scenario: SSN is masked in the prompt
+          Background:
             Given the PII policy engine is running
             And the Completions Proxy is running
-            When I send a completion request with prompt "My SSN is 123-45-6789"
-            Then the response should contain "My SSN is ***-**-****"
-            And the response status code should be 200
 
-          Scenario: Credit card number is masked in the prompt
-            Given the PII policy engine is running
-            And the Completions Proxy is running
-            When I send a completion request with prompt "Pay using card 1234-5678-9012-3456"
-            Then the response should contain "Pay using card ****-****-****-****"
+          Scenario Outline: Sensitive PII masking in prompts
+            When I send a completion request with prompt "<prompt>"
+            Then the response should contain "<expected>"
             And the response status code should be 200
+            And the response should not contain "<raw_pii>"
 
-        8 scenarios (8 passed)
-        38 steps (38 passed)
+            Examples:
+              | prompt                              | expected                            | raw_pii             |
+              | My SSN is 123-45-6789               | My SSN is ***-**-****               | 123-45-6789         |
+              | Pay using card 1234-5678-9012-3456  | Pay using card ****-****-****-****  | 1234-5678-9012-3456 |
+              | My SIN is 123-456-789               | My SIN is ***-***-***               | 123-456-789         |
+
+        12 scenarios (12 passed)
+        60 steps (60 passed)
         PASS
-        ok  	llm-telemetry-gateway/e2e	0.518s
+        ok  	llm-telemetry-gateway/e2e	0.528s
     - title: "Go Core Proxy Unit Tests"
       terminal_output: |
         === RUN   TestHandleCompletions
