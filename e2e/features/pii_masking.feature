@@ -3,25 +3,19 @@ Feature: PII Masking
   I want to detect and redact sensitive PII before forwarding payloads
   So that user privacy is preserved
 
-  Scenario: SSN is masked in the prompt
+  Background:
     Given the PII policy engine is running
     And the Completions Proxy is running
-    When I send a completion request with prompt "My SSN is 123-45-6789"
-    Then the response should contain "My SSN is ***-**-****"
-    And the response status code should be 200
-    But the response should not contain "123-45-6789"
 
-  Scenario: Credit card number is masked in the prompt
-    Given the PII policy engine is running
-    And the Completions Proxy is running
-    When I send a completion request with prompt "Pay using card 1234-5678-9012-3456"
-    Then the response should contain "Pay using card ****-****-****-****"
+  Scenario Outline: Sensitive PII masking in prompts
+    When I send a completion request with prompt "<prompt>"
+    Then the response should contain "<expected>"
     And the response status code should be 200
+    And the response should not contain "<raw_pii>"
 
-  Scenario: Canadian SIN is masked in the prompt
-    Given the PII policy engine is running
-    And the Completions Proxy is running
-    When I send a completion request with prompt "My SIN is 123-456-789"
-    Then the response should contain "My SIN is ***-***-***"
-    And the response status code should be 200
+    Examples:
+      | prompt                              | expected                            | raw_pii             |
+      | My SSN is 123-45-6789               | My SSN is ***-**-****               | 123-45-6789         |
+      | Pay using card 1234-5678-9012-3456  | Pay using card ****-****-****-****  | 1234-5678-9012-3456 |
+      | My SIN is 123-456-789               | My SIN is ***-***-***               | 123-456-789         |
 

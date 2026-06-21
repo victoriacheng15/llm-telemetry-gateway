@@ -130,6 +130,8 @@ func (s *TestState) SetupProxy() error {
 	mux.HandleFunc("/healthz", gateway.HandleHealthz)
 	mux.HandleFunc("/readyz", gateway.HandleReadyz)
 	mux.HandleFunc("/api/mask", gateway.HandleMaskTest)
+	mux.HandleFunc("/api/limits", gateway.HandleLimits)
+	mux.HandleFunc("/api/metrics", gateway.HandleMetrics)
 
 	server := &http.Server{
 		Handler: mux,

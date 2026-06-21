@@ -34,3 +34,32 @@ Feature: Completions Proxy Routing and Error Paths
     When I send a completion request with prompt "hello"
     Then the response status code should be 503
     And the response should contain "PII policy engine unreachable"
+
+  Scenario: Fetching runtime system resource limits
+    Given the Completions Proxy is running
+    When I GET path "/api/limits"
+    Then the response status code should be 200
+    And the response should contain "cpu"
+    And the response should contain "memory"
+
+  Scenario: Preflight request to masking endpoint is allowed
+    Given the Completions Proxy is running
+    When I send an OPTIONS request to path "/api/mask"
+    Then the response status code should be 200
+
+  Scenario: Metrics endpoint captures gateway traffic statistics
+    Given the PII policy engine is running
+    And the Completions Proxy is running
+    When I send a completion request with prompt "test metrics throughput"
+    And I GET path "/api/metrics"
+    Then the response status code should be 200
+    And the response should contain "cpu_usage"
+    And the response should contain "token_throughput"
+
+  Scenario: Direct raw prompt masking via API
+    Given the PII policy engine is running
+    And the Completions Proxy is running
+    When I send a masking request with prompt "Direct test SSN 123-45-6789"
+    Then the response should contain "Direct test SSN ***-**-****"
+    And the response status code should be 200
+
