@@ -31,14 +31,12 @@ scale-down: ## Scale down all sandbox deployments to 0 replicas
 	kubectl scale deployment --all -n gateway --replicas=0
 	kubectl scale deployment --all -n telemetry --replicas=0
 	kubectl scale deployment --all -n ollama --replicas=0
-	kubectl scale deployment --all -n chaos-mesh --replicas=0
 
 scale-up: ## Scale up all sandbox deployments to 1 replica
 	@echo "==> Scaling up all deployments to 1..."
 	kubectl scale deployment --all -n gateway --replicas=1
 	kubectl scale deployment --all -n telemetry --replicas=1
 	kubectl scale deployment --all -n ollama --replicas=1
-	kubectl scale deployment --all -n chaos-mesh --replicas=1
 
 test-k3s: ## Run cluster pod end-to-end loopback validation
 	@echo "==> Verifying UDS socket mount inside pod..."
