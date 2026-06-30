@@ -10,32 +10,33 @@ It proves an end-to-end platform ownership loop: declarative infrastructure runs
 
 ## Architecture
 
-The main system flow starts from declarative source, runs through host and cluster runtimes, emits telemetry, drives policy intervention, and feeds metrics and logs back into telemetry pipelines.
+The system processes requests and manages state through simplified operational paths:
 
-| Path | Use case | Flow |
+| Path | Purpose | Flow |
 | :--- | :--- | :--- |
-| Platform reconciliation | Keep host and cluster state aligned with Git | kubectl -> k3s runtime -> gateway namespace |
-| Telemetry pipeline | Capture behavior across proxy and policy containers | Go completions proxy -> OpenTelemetry SDK -> OTel Collector -> Prometheus -> Grafana |
-| Policy intervention | Intercept prompts, run PII masking, and enforce rules | Go completions proxy -> IPC Unix Domain Socket -> Python policy sidecar -> sanitizer |
-| Cognitive Diagnostics | Query LLM model completions and diagnostics | Go completions proxy / Python sidecar -> Ollama API service -> local inference |
-| Operational memory | Preserve the reasoning behind decisions and failures | Workflows/incidents -> ADRs/RCAs/notes -> future source changes |
+| Infrastructure Sync | Align cluster and host state declaratively | `kubectl` -> `K3s` runtime |
+| Telemetry Pipeline | Capture observability metrics and JSON logs | `Go Proxy` -> `OTel Collector` -> `Prometheus` |
+| Policy Masking | Redact PII (SSNs, CCs) from LLM prompts | `Go Proxy` -> `UDS` -> `Python Sidecar` |
+| Local Inference | Query LLM completions and execute diagnostics | `Go Proxy` -> `Ollama API` |
+| Incident Memory | Document and preserve architectural learnings | `ADRs` / `RCAs` / `Incidents` |
 
-```mermaid
-flowchart TB
-    Source["Source of Truth<br/>K3s manifests"]
-    Runtime["Runtime<br/>K3s, Go completions proxy, Python sidecar, Ollama"]
-    Signals["Signals<br/>OTel metrics, slog JSON logs"]
-    Decisions["Decisions<br/>Grafana dashboards, Prometheus database"]
-    Actions["Actions<br/>Fail-closed proxy, redeployment, sidecar policy updates"]
-    Memory["Memory<br/>ADRs, RCAs, notes, blueprints"]
-
-    Source --> Runtime
-    Runtime --> Signals
-    Signals --> Decisions
-    Decisions --> Actions
-    Actions --> Source
-    Decisions --> Memory
-    Memory --> Source
+```text
+           ┌────────┐             ┌────────────┐
+           │ Client │             │ Chaos Mesh │
+           └────────┘             └────────────┘
+                 │                       │
+                 │ (Completions)         ├────────────────────────┐
+                 ▼                       ▼ (Injects faults)       ▼ (Injects faults)
+          ┌─────────────────────┐ <──────┘               ┌─────────────────────┐
+          │ Gateway Proxy (Go)  │ <====================> │ Sidecar Policy (Py) │
+          └─────────────────────┘      (UDS Socket)      └─────────────────────┘
+                 │                                            │             │
+                 │ (Sends metrics)           (Scrapes metrics)│             │ (RCA queries)
+                 ▼                                            ▼             ▼
+          ┌───────────┐ <─────────────────────────────────────┘      ┌────────────┐
+          │ OTel      │                                              │ Ollama LLM │
+          │ Collector │                                              └────────────┘
+          └───────────┘
 ```
 
 ---
