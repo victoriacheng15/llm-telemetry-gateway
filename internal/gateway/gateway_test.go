@@ -1145,3 +1145,119 @@ func TestHandleMetricsAndLimits(t *testing.T) {
 		})
 	}
 }
+
+func TestParseMemoryLimit(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected int64
+	}{
+		{"512Mi", 512 * 1024 * 1024},
+		{"1Gi", 1024 * 1024 * 1024},
+		{"1024K", 1024 * 1024},
+		{"1000", 1000},
+		{"", 512 * 1024 * 1024},
+		{"invalid", 512 * 1024 * 1024},
+	}
+
+	for _, tt := range tests {
+		got := parseMemoryLimit(tt.input)
+		if got != tt.expected {
+			t.Errorf("parseMemoryLimit(%q) = %d, expected %d", tt.input, got, tt.expected)
+		}
+	}
+}
+
+func TestGetProxyStats(t *testing.T) {
+	tracker := &MetricsTracker{
+		requests: []MetricEntry{
+			{Timestamp: time.Now(), Duration: 0.1, Tokens: 50},
+			{Timestamp: time.Now(), Duration: 0.2, Tokens: 100},
+		},
+	}
+
+	count, tokens, avg := tracker.getProxyStats()
+	if count != 2 {
+		t.Errorf("expected count 2, got %d", count)
+	}
+	if tokens != 150 {
+		t.Errorf("expected tokens 150, got %d", tokens)
+	}
+	if fmt.Sprintf("%.2f", avg) != "0.15" {
+		t.Errorf("expected avg duration 0.15, got %f", avg)
+	}
+}
+
+func TestEvaluateTelemetry(t *testing.T) {
+	// Temporarily override files path
+	tempDir := t.TempDir()
+	oldDiag := DiagnosticsPath
+	oldRCA := RCALogPath
+	oldSocket := SocketPath
+	oldCompletionsURL := CompletionsURL
+
+	DiagnosticsPath = filepath.Join(tempDir, "diagnostics.txt")
+	RCALogPath = filepath.Join(tempDir, "rca.log")
+	SocketPath = filepath.Join(tempDir, "policy.sock")
+
+	// Stand up mock UDS server
+	l, err := net.Listen("unix", SocketPath)
+	if err != nil {
+		t.Fatalf("failed to listen on UDS: %v", err)
+	}
+	defer l.Close()
+
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				buf := make([]byte, 1024)
+				n, _ := c.Read(buf)
+				c.Write(buf[:n]) // Echo back
+			}(conn)
+		}
+	}()
+
+	// Stand up mock Completions proxy server
+	mockProxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"choices": [{"message": {"content": "[RCA] High request latency observed due to network chaos."}}]}`))
+	}))
+	defer mockProxy.Close()
+	CompletionsURL = mockProxy.URL
+
+	defer func() {
+		DiagnosticsPath = oldDiag
+		RCALogPath = oldRCA
+		SocketPath = oldSocket
+		CompletionsURL = oldCompletionsURL
+	}()
+
+	tracker := &MetricsTracker{}
+	tracker.systemMetrics = []SystemMetric{
+		{Timestamp: time.Now(), CPU: 95.0, Memory: 104857600}, // > 80% CPU
+	}
+	tracker.requests = []MetricEntry{
+		{Timestamp: time.Now(), Duration: 0.5, Tokens: 100}, // > 200ms latency
+	}
+
+	tracker.evaluateTelemetry(context.Background())
+
+	// Verify diagnostics file was written
+	if _, err := os.Stat(DiagnosticsPath); os.IsNotExist(err) {
+		t.Errorf("Diagnostics file was not written")
+	}
+
+	// Verify RCA log file was written
+	rcaData, err := os.ReadFile(RCALogPath)
+	if err != nil {
+		t.Fatalf("failed to read RCA log file: %v", err)
+	}
+
+	if !strings.Contains(string(rcaData), "[RCA] High request latency observed due to network chaos.") {
+		t.Errorf("RCA log file does not contain expected diagnosis: %s", string(rcaData))
+	}
+}
