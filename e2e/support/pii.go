@@ -3,9 +3,11 @@ package support
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -22,6 +24,7 @@ type TestState struct {
 	UDSSocketPath string
 	UDSListener   net.Listener
 	ProxyServer   *http.Server
+	OllamaServer  *httptest.Server
 	LastResponse  *http.Response
 	LastBody      string
 	UDSRunning    bool
@@ -123,6 +126,37 @@ func (s *TestState) SetupProxy() error {
 		return nil
 	}
 
+	// Spin up a mock Ollama completions server that echoes back the redacted prompt
+	mockOllama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		type completionsRequest struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		var req completionsRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+
+		content := ""
+		if len(req.Messages) > 0 {
+			content = req.Messages[0].Content
+		}
+
+		resp := map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{
+					"message": map[string]string{
+						"content": content,
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	s.OllamaServer = mockOllama
+	gateway.OllamaURL = mockOllama.URL
+
 	gateway.SocketPath = s.UDSSocketPath
 
 	mux := http.NewServeMux()
@@ -159,6 +193,10 @@ func (s *TestState) Cleanup() {
 		defer cancel()
 		_ = s.ProxyServer.Shutdown(ctx)
 		s.ProxyServer = nil
+	}
+	if s.OllamaServer != nil {
+		s.OllamaServer.Close()
+		s.OllamaServer = nil
 	}
 }
 

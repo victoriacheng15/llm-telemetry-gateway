@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -34,6 +35,11 @@ var (
 	RCALogPath      = "/tmp/shared/rca.log"
 	SigChan         = make(chan os.Signal, 1)
 
+	// OllamaURL is the base URL for the upstream Ollama LLM service.
+	// Override via OLLAMA_URL env var for non-default deployments.
+	OllamaURL    = "http://ollama.ollama.svc.cluster.local:11434"
+	ollamaClient = &http.Client{Timeout: 30 * time.Second}
+
 	meter         = otel.Meter("gateway")
 	inputCounter  metric.Int64Counter
 	outputCounter metric.Int64Counter
@@ -48,6 +54,12 @@ var (
 	memUsagePath     = "/sys/fs/cgroup/memory/memory.usage_in_bytes"
 	procStatusPath   = "/proc/self/status"
 )
+
+func init() {
+	if url := os.Getenv("OLLAMA_URL"); url != "" {
+		OllamaURL = url
+	}
+}
 
 type MetricEntry struct {
 	Timestamp time.Time
@@ -431,6 +443,256 @@ func (t *MetricsTracker) GetMetrics(duration time.Duration) MetricsResponse {
 	}
 }
 
+func parseMemoryLimit(limitStr string) int64 {
+	if limitStr == "" {
+		return 512 * 1024 * 1024 // 512Mi default
+	}
+	limitStr = strings.TrimSpace(limitStr)
+	multiplier := int64(1)
+	unit := ""
+	for i := len(limitStr) - 1; i >= 0; i-- {
+		ch := limitStr[i]
+		if (ch >= '0' && ch <= '9') || ch == '.' {
+			unit = limitStr[i+1:]
+			limitStr = limitStr[:i+1]
+			break
+		}
+	}
+	unit = strings.ToUpper(unit)
+	if strings.HasPrefix(unit, "G") {
+		multiplier = 1024 * 1024 * 1024
+	} else if strings.HasPrefix(unit, "M") {
+		multiplier = 1024 * 1024
+	} else if strings.HasPrefix(unit, "K") {
+		multiplier = 1024
+	}
+	val, err := strconv.ParseFloat(limitStr, 64)
+	if err == nil {
+		return int64(val * float64(multiplier))
+	}
+	return 512 * 1024 * 1024
+}
+
+func (t *MetricsTracker) getProxyStats() (int, int64, float64) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	requestCount := len(t.requests)
+	var totalTokens int64
+	var totalDuration float64
+	for _, req := range t.requests {
+		totalTokens += req.Tokens
+		totalDuration += req.Duration
+	}
+	avgDuration := float64(0)
+	if requestCount > 0 {
+		avgDuration = totalDuration / float64(requestCount)
+	}
+	return requestCount, totalTokens, avgDuration
+}
+
+func buildPromptContext(cpuUsage float64, memUsage int64, memLimitBytes int64, reqCount int, totalTokens int64, avgDuration float64, anomalies []string) string {
+	nowStr := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+	status := "HEALTHY"
+	if len(anomalies) > 0 {
+		status = "ANOMALOUS"
+	}
+	memUsagePct := float64(0)
+	if memLimitBytes > 0 {
+		memUsagePct = (float64(memUsage) / float64(memLimitBytes)) * 100.0
+	}
+
+	var lines []string
+	lines = append(lines, "=== Telemetry Diagnostics Context ===")
+	lines = append(lines, fmt.Sprintf("Timestamp: %s", nowStr))
+	lines = append(lines, fmt.Sprintf("System Status: %s", status))
+	lines = append(lines, "")
+	lines = append(lines, "Metrics Snapshot:")
+	lines = append(lines, fmt.Sprintf("- Pod CPU Utilization: %.1f%%", cpuUsage))
+	lines = append(lines, fmt.Sprintf("- Pod Memory Utilization: %.1f%%", memUsagePct))
+	lines = append(lines, fmt.Sprintf("- Total Requests Processed: %d", reqCount))
+	lines = append(lines, fmt.Sprintf("- Total Tokens: %d", totalTokens))
+	lines = append(lines, fmt.Sprintf("- Average Response Duration: %.1fms", avgDuration*1000.0))
+
+	if len(anomalies) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, "Detected Anomalies:")
+		for _, anomaly := range anomalies {
+			lines = append(lines, fmt.Sprintf("[ALERT] %s", anomaly))
+		}
+	}
+	lines = append(lines, "=====================================")
+	return strings.Join(lines, "\n")
+}
+
+func (t *MetricsTracker) StartTelemetryEvaluator(ctx context.Context) {
+	// Wait a bit on startup for metrics servers to initialize
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(5 * time.Second):
+	}
+
+	slog.Info("Telemetry evaluation loop started.")
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			t.evaluateTelemetry(ctx)
+		}
+	}
+}
+
+func (t *MetricsTracker) evaluateTelemetry(ctx context.Context) {
+	var cpuUsage float64
+	var memUsage int64
+	t.mu.RLock()
+	if len(t.systemMetrics) > 0 {
+		latest := t.systemMetrics[len(t.systemMetrics)-1]
+		cpuUsage = latest.CPU
+		memUsage = latest.Memory
+	}
+	t.mu.RUnlock()
+
+	var anomalies []string
+	if cpuUsage > 80.0 {
+		anomalies = append(anomalies, fmt.Sprintf("High Pod CPU Utilization: %.2f%%", cpuUsage))
+	}
+
+	memLimitBytes := parseMemoryLimit(os.Getenv("LIMITS_MEMORY"))
+	memUsagePct := float64(0)
+	if memLimitBytes > 0 {
+		memUsagePct = (float64(memUsage) / float64(memLimitBytes)) * 100.0
+	}
+	if memUsagePct > 80.0 {
+		anomalies = append(anomalies, fmt.Sprintf("High Pod Memory Utilization: %.2f%%", memUsagePct))
+	}
+
+	// Check for UDS connectability (PII policy engine health)
+	udsConn, err := net.DialTimeout("unix", SocketPath, 1*time.Second)
+	if err != nil {
+		anomalies = append(anomalies, "Go Proxy readyz check failed (PII policy engine unreachable)")
+	} else {
+		udsConn.Close()
+	}
+
+	// Check recent latencies
+	t.mu.RLock()
+	hasHighLatency := false
+	var lastDur float64
+	for i := len(t.requests) - 1; i >= 0; i-- {
+		if time.Since(t.requests[i].Timestamp) > 10*time.Second {
+			break
+		}
+		if t.requests[i].Duration > 0.2 {
+			hasHighLatency = true
+			lastDur = t.requests[i].Duration
+			break
+		}
+	}
+	t.mu.RUnlock()
+
+	if hasHighLatency {
+		anomalies = append(anomalies, fmt.Sprintf("High request latency observed: %.1fms", lastDur*1000.0))
+	}
+
+	reqCount, totalTokens, avgDuration := t.getProxyStats()
+
+	latestContext := buildPromptContext(cpuUsage, memUsage, memLimitBytes, reqCount, totalTokens, avgDuration, anomalies)
+
+	// Write diagnostics to file
+	err = os.WriteFile(DiagnosticsPath, []byte(latestContext), 0644)
+	if err != nil {
+		slog.Error("Failed to write diagnostics file", "error", err)
+	}
+
+	// RCA Diagnosis using Ollama via Go completions endpoint
+	var rcaText string
+	if len(anomalies) > 0 {
+		prompt := fmt.Sprintf(
+			"You are an AIOps diagnostic agent. Analyze the system telemetry context below and perform a "+
+				"Root Cause Analysis (RCA) to identify which active chaos scenario is happening.\n"+
+				"Choose exactly one of the following scenarios:\n"+
+				"1. \"Network Delay\" (high request duration/latency)\n"+
+				"2. \"Sidecar Process Crash\" (healthz/readyz check failing, connection refused)\n"+
+				"3. \"Resource Starvation / Stress\" (high pod CPU or memory utilization)\n"+
+				"4. \"Healthy / Nominal\" (no anomalies)\n\n"+
+				"System Telemetry Context:\n"+
+				"%s\n\n"+
+				"Provide a short, direct natural-language Root Cause Analysis log (max 2 sentences) identifying "+
+				"the active scenario and the primary symptom. Start with '[RCA] '.",
+			latestContext,
+		)
+
+		// Call localhost:8080/v1/chat/completions
+		payloadMap := map[string]interface{}{
+			"model": "qwen2.5:0.5b",
+			"messages": []map[string]string{
+				{"role": "user", "content": strings.TrimSpace(prompt)},
+			},
+		}
+		payloadBytes, err := json.Marshal(payloadMap)
+		if err != nil {
+			slog.Error("Failed to marshal RCA completions payload", "error", err)
+			rcaText = fmt.Sprintf("[RCA] Anomalies detected: %s", strings.Join(anomalies, "; "))
+		} else {
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://localhost:8080/v1/chat/completions", bytes.NewBuffer(payloadBytes))
+			if err != nil {
+				slog.Error("Failed to build request to completions proxy", "error", err)
+				rcaText = fmt.Sprintf("[RCA] Anomalies detected: %s", strings.Join(anomalies, "; "))
+			} else {
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("X-Gateway-Internal", "true")
+				resp, err := ollamaClient.Do(req)
+				if err != nil {
+					slog.Error("Failed to query completions proxy", "error", err)
+					rcaText = fmt.Sprintf("[RCA] Anomalies detected: %s (Go proxy unreachable)", strings.Join(anomalies, "; "))
+				} else {
+					defer resp.Body.Close()
+					respBody, err := io.ReadAll(resp.Body)
+					if err != nil || resp.StatusCode != http.StatusOK {
+						slog.Error("Go proxy returned error for RCA query", "status", resp.StatusCode)
+						rcaText = fmt.Sprintf("[RCA] Anomalies detected: %s", strings.Join(anomalies, "; "))
+					} else {
+						type chatCompletionResponse struct {
+							Choices []struct {
+								Message struct {
+									Content string `json:"content"`
+								} `json:"message"`
+							} `json:"choices"`
+						}
+						var chatResp chatCompletionResponse
+						err = json.Unmarshal(respBody, &chatResp)
+						if err == nil && len(chatResp.Choices) > 0 {
+							rcaText = chatResp.Choices[0].Message.Content
+						} else {
+							rcaText = fmt.Sprintf("[RCA] Anomalies detected: %s", strings.Join(anomalies, "; "))
+						}
+					}
+				}
+			}
+		}
+	} else {
+		rcaText = "INFO: Nominal system health. No anomalies detected."
+	}
+
+	f, err := os.OpenFile(RCALogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		slog.Error("Failed to open RCA log file", "error", err)
+		return
+	}
+	defer f.Close()
+
+	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+	logEntry := fmt.Sprintf("[%s] %s\n", timestamp, strings.TrimSpace(rcaText))
+	slog.Info("RCA DIAGNOSTICS", "entry", strings.TrimSpace(rcaText))
+	_, _ = f.WriteString(logEntry)
+}
+
 func HandleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -511,6 +773,7 @@ func Run(serverAddr string) {
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	defer bgCancel()
 	go globalTracker.StartCollector(bgCtx)
+	go globalTracker.StartTelemetryEvaluator(bgCtx)
 
 	// Initialize OpenTelemetry SDK
 	ctx := context.Background()
@@ -594,13 +857,15 @@ func HandleCompletions(w http.ResponseWriter, r *http.Request) {
 
 	payload := string(body) + "\n"
 
+	isInternal := r.Header.Get("X-Gateway-Internal") == "true"
+
 	// Record input tokens
 	inputTokens := CountTokens(payload)
-	if inputCounter != nil {
+	if !isInternal && inputCounter != nil {
 		inputCounter.Add(r.Context(), inputTokens)
 	}
 
-	response, err := DialAndSend(SocketPath, payload)
+	maskedPayload, err := DialAndSend(SocketPath, payload)
 	if err != nil {
 		slog.Error("PII policy engine unreachable", "error", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -609,29 +874,72 @@ func HandleCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Record output tokens
-	outputTokens := CountTokens(response)
-	if outputCounter != nil {
-		outputCounter.Add(r.Context(), outputTokens)
+	slog.Debug("PII masking complete, forwarding to Ollama", "ollama_url", OllamaURL)
+
+	// Forward the sanitized payload to the upstream Ollama LLM service.
+	response, err := forwardToOllama(r.Context(), strings.TrimSpace(maskedPayload))
+	if err != nil {
+		slog.Error("Ollama upstream request failed", "error", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte(`{"error": "LLM upstream unreachable"}`))
+		return
 	}
 
-	// Record duration histogram
 	duration := time.Since(startTime).Seconds()
-	if durationHist != nil {
-		durationHist.Record(r.Context(), duration)
-	}
 
-	globalTracker.RecordRequest(duration, inputTokens+outputTokens)
+	if !isInternal {
+		// Record output tokens from the Ollama response (not the masked payload)
+		outputTokens := CountTokens(response)
+		if outputCounter != nil {
+			outputCounter.Add(r.Context(), outputTokens)
+		}
+
+		// Record duration histogram
+		if durationHist != nil {
+			durationHist.Record(r.Context(), duration)
+		}
+
+		globalTracker.RecordRequest(duration, inputTokens+outputTokens)
+	}
 
 	slog.Info("Request completed successfully",
 		"duration_seconds", duration,
 		"input_tokens", inputTokens,
-		"output_tokens", outputTokens,
 		"status", http.StatusOK,
 	)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(response))
+}
+
+// forwardToOllama sends the sanitized payload to Ollama's OpenAI-compatible
+// chat completions endpoint and returns the raw response body.
+func forwardToOllama(ctx context.Context, maskedPayload string) (string, error) {
+	url := OllamaURL + "/v1/chat/completions"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBufferString(maskedPayload))
+	if err != nil {
+		return "", fmt.Errorf("failed to build Ollama request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := ollamaClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to reach Ollama at %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read Ollama response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("Ollama returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return string(respBody), nil
 }
 
 // DialAndSend connects to the UDS socket (with retry), writes the payload, and returns the response.

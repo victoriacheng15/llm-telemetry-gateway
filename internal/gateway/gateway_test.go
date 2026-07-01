@@ -136,10 +136,25 @@ func TestHandleCompletions(t *testing.T) {
 		}
 	}()
 
-	// Temporarily override the package-level SocketPath
+	// Stand up a mock Ollama HTTP server that echoes the masked payload
+	mockOllama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := new(bytes.Buffer)
+		body.ReadFrom(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(body.Bytes())
+	}))
+	defer mockOllama.Close()
+
+	// Temporarily override the package-level SocketPath and OllamaURL
 	oldSocketPath := SocketPath
+	oldOllamaURL := OllamaURL
 	SocketPath = testSocket
-	defer func() { SocketPath = oldSocketPath }()
+	OllamaURL = mockOllama.URL
+	defer func() {
+		SocketPath = oldSocketPath
+		OllamaURL = oldOllamaURL
+	}()
 
 	tests := []struct {
 		name           string
