@@ -34,6 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       go: ${{ steps.filter.outputs.go }}
+      e2e: ${{ steps.filter.outputs.e2e }}
       python: ${{ steps.filter.outputs.python }}
       k3s: ${{ steps.filter.outputs.k3s }}
       markdown: ${{ steps.filter.outputs.markdown }}
@@ -45,7 +46,13 @@ jobs:
           filters: |
             go:
               - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+            e2e:
+              - '**/*.go'
               - '**/*.feature'
+              - '!internal/web/showcase/**'
+              - '!cmd/showcase/**'
               - 'go.mod'
               - 'go.sum'
             python:
@@ -102,6 +109,19 @@ jobs:
       - name: Run Go Unit Tests
         run: |
           make test-go
+
+  e2e-ci:
+    name: Go BDD E2E Tests
+    needs: changes
+    if: ${{ needs.changes.outputs.e2e == 'true' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.go-version }}
+          cache: true
 
       - name: Run Go BDD E2E Tests
         run: |
