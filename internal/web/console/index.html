@@ -79,22 +79,6 @@
             <h2 class="logs-title">AIOps Incident Observability Logs (Streaming)</h2>
             <ol class="terminal" id="log-terminal"></ol>
         </section>
-
-        <!-- PII Redaction Playground -->
-        <section class="playground-section" aria-label="PII Masking Playground">
-            <h2 class="playground-title">PII Masking Playground</h2>
-            <form class="playground-grid">
-                <label class="input-group">
-                    <span>Raw Input Prompt</span>
-                    <textarea id="raw-prompt" class="playground-textarea" placeholder="Type a prompt with PII (e.g. My SSN is 123-45-6789)..."></textarea>
-                </label>
-                <label class="input-group">
-                    <span>Masked Output</span>
-                    <textarea id="masked-prompt" class="playground-textarea" readonly placeholder="Redacted output will appear here..."></textarea>
-                </label>
-            </form>
-            <button type="button" class="btn-primary" id="btn-redact">Test Redaction</button>
-        </section>
     </main>
 
     <script>
@@ -261,45 +245,6 @@
             };
         }
 
-        function initPlayground() {
-            const btnRedact = document.getElementById('btn-redact');
-            const rawPrompt = document.getElementById('raw-prompt');
-            const maskedPrompt = document.getElementById('masked-prompt');
-
-            if (btnRedact && rawPrompt && maskedPrompt) {
-                btnRedact.addEventListener('click', async () => {
-                    const text = rawPrompt.value;
-                    if (!text) return;
-                    
-                    btnRedact.disabled = true;
-                    btnRedact.textContent = 'Processing...';
-                    
-                    try {
-                        const response = await fetch('/api/mask', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({ prompt: text })
-                        });
-                        
-                        if (response.ok) {
-                            const data = await response.json();
-                            maskedPrompt.value = data.masked;
-                        } else {
-                            const data = await response.json();
-                            maskedPrompt.value = `Error: ${data.error || 'Failed to process'}`;
-                        }
-                    } catch (err) {
-                        console.error('Failed to test redaction:', err);
-                        maskedPrompt.value = `Error: ${err.message}`;
-                    } finally {
-                        btnRedact.disabled = false;
-                        btnRedact.textContent = 'Test Redaction';
-                    }
-                });
-            }
-        }
 
         window.addEventListener('DOMContentLoaded', async () => {
             await fetchLimits();
@@ -314,7 +259,6 @@
             }
             
             initLogsStream();
-            initPlayground();
             console.log('IDP Console fully connected to backend.');
         });
     </script>
