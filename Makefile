@@ -1,20 +1,14 @@
 # Global Makefile configurations and flags
 MAKEFLAGS += --no-print-directory
 
-DOCKER ?= podman
-
-# Include modular makefiles
-include mk/python.mk
-include mk/go.mk
-include mk/kubernetes.mk
-
-.PHONY: all lint test fmt cov lint-md fmt-md help
-
+.PHONY: all
 all: lint test fmt
 
 # ==============================================================================
-# MARKDOWN TARGETS (LINTING, FORMATTING)
+# MARKDOWN TARGETS
 # ==============================================================================
+
+.PHONY: lint-md fmt-md
 
 lint-md: ## Lint Markdown files
 	@echo "==> Linting Markdown files..."
@@ -25,8 +19,139 @@ fmt-md: ## Format Markdown files using markdownlint-cli
 	npx markdownlint-cli '**/*.md' --ignore .venv --fix
 
 # ==============================================================================
+# GO TARGETS
+# ==============================================================================
+
+.PHONY: update lint-go test-go test-bdd cov-go fmt-go build-go build-showcase
+
+update: ## Update Go dependencies
+	@echo "==> Updating Go dependencies..."
+	go get -u ./...
+	go mod tidy
+
+lint-go: ## Lint Go code
+	@echo "==> Linting Go code..."
+	go vet ./...
+
+test-go: ## Run Go unit tests
+	@echo "==> Running Go unit tests..."
+	go test -v $(shell go list ./... | grep -v /e2e)
+
+test-bdd: ## Run Go BDD tests
+	@echo "==> Running Go BDD E2E tests..."
+	go test -v ./e2e/...
+
+cov-go: ## Run Go test coverage
+	@echo "==> Running Go test coverage..."
+	go test -cover -coverprofile=coverage.out ./...
+	rm -f coverage.out
+
+fmt-go: ## Format Go code
+	@echo "==> Formatting Go code..."
+	go fmt ./...
+
+build-go: ## Build the Go gateway binary statically
+	@echo "==> Building Go gateway binary..."
+	CGO_ENABLED=0 go build -ldflags "-extldflags -static" -o bin/gateway cmd/gateway/main.go
+
+build-showcase: ## Build the showcase static site
+	@echo "==> Preparing dist directory..."
+	rm -rf dist
+	mkdir -p dist
+	@echo "==> Building showcase static site..."
+	go run cmd/showcase/main.go
+
+
+# ==============================================================================
+# PYTHON TARGETS
+# ==============================================================================
+
+.PHONY: freeze install lint-py test-py cov-py fmt-py
+
+freeze: ## Freeze Python dependencies inside virtualenv to requirements.txt
+	@echo "==> Freezing Python dependencies..."
+	.venv/bin/pip freeze > requirements.txt
+
+install: ## Install Python dependencies inside virtualenv from requirements.txt
+	@echo "==> Installing Python dependencies..."
+	python3 -m venv .venv
+	.venv/bin/pip install -r requirements.txt
+
+lint-py: ## Lint Python code
+	@echo "==> Linting Python code..."
+	@if [ -f .venv/bin/ruff ]; then \
+		.venv/bin/ruff check cmd/ internal/; \
+	else \
+		echo "Warning: 'ruff' not found in virtualenv. Skipping Python linting."; \
+	fi
+
+test-py: ## Run Python unit tests using pytest
+	@echo "==> Running Python unit tests..."
+	PYTHONPATH=. .venv/bin/python -m pytest internal/sidecar/ -v
+
+cov-py: ## Run Python test coverage using pytest-cov
+	@echo "==> Running Python test coverage..."
+	PYTHONPATH=. .venv/bin/python -m pytest --cov=internal/sidecar --cov-report=term-missing internal/sidecar/
+	rm -f .coverage
+
+fmt-py: ## Format Python code
+	@echo "==> Formatting Python code..."
+	@if [ -f .venv/bin/ruff ]; then \
+		.venv/bin/ruff format cmd/ internal/; \
+	else \
+		echo "Warning: 'ruff' not found in virtualenv. Skipping Python formatting."; \
+	fi
+
+# ==============================================================================
+# KUBERNETES & CONTAINER TARGETS
+# ==============================================================================
+
+.PHONY: lint-k3s deploy scale-down scale-up test-k3s
+
+lint-k3s: ## Lint Kubernetes manifests using kube-linter
+	@echo "==> Linting Kubernetes manifests..."
+	~/go/bin/kube-linter lint k3s/
+
+deploy: ## Apply Kubernetes manifests to the cluster
+	@echo "==> Applying bootstrap resources..."
+	kubectl apply -f k3s/bootstrap/
+	@echo "==> Applying telemetry stack..."
+	kubectl apply -f k3s/telemetry/
+	@echo "==> Applying Ollama environment..."
+	kubectl apply -f k3s/ollama/
+	@echo "==> Applying gateway RBAC configuration..."
+	kubectl apply -f k3s/apps/rbac.yaml
+	@echo "==> Applying gateway NetworkPolicy..."
+	kubectl apply -f k3s/apps/network-policy.yaml
+	@echo "==> Applying gateway workload deployment..."
+	sed "s|/opt/llm-telemetry-gateway|$$PWD|g" k3s/apps/deployment.yaml | kubectl apply -f -
+
+scale-down: ## Scale down all sandbox deployments to 0 replicas
+	@echo "==> Scaling down all deployments to 0..."
+	kubectl scale deployment --all -n gateway --replicas=0
+	kubectl scale deployment --all -n telemetry --replicas=0
+	kubectl scale deployment --all -n ollama --replicas=0
+
+scale-up: ## Scale up all sandbox deployments to 1 replica
+	@echo "==> Scaling up all deployments to 1..."
+	kubectl scale deployment --all -n gateway --replicas=1
+	kubectl scale deployment --all -n telemetry --replicas=1
+	kubectl scale deployment --all -n ollama --replicas=1
+
+test-k3s: ## Run cluster pod end-to-end loopback validation
+	@echo "==> Verifying UDS socket mount inside pod..."
+	kubectl exec -n gateway deploy/gateway -c gateway -- ls -la /tmp/shared
+	@echo "==> Validating completions masking inside pod..."
+	kubectl exec -n gateway deploy/gateway -c gateway -- wget -qO- \
+		--post-data='{"prompt": "Client SSN is 123-45-6789"}' \
+		--header='Content-Type: application/json' \
+		http://localhost:8080/v1/chat/completions
+
+# ==============================================================================
 # COMPOSITE & AUTOMATION TARGETS
 # ==============================================================================
+
+.PHONY: lint test fmt cov
 
 lint: ## Run all linters
 	@$(MAKE) lint-go
@@ -51,6 +176,8 @@ cov: ## Run all test coverages
 # ==============================================================================
 # DOCUMENTATION
 # ==============================================================================
+
+.PHONY: help
 
 help: ## Show this help menu
 	@echo "Usage: make [target]"
