@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -44,8 +43,6 @@ var (
 	inputCounter  metric.Int64Counter
 	outputCounter metric.Int64Counter
 	durationHist  metric.Float64Histogram
-
-	execCommand = exec.Command
 )
 
 func init() {
@@ -160,8 +157,6 @@ func Run(serverAddr string) {
 	mux.HandleFunc("/v1/chat/completions", HandleCompletions)
 	mux.HandleFunc("/healthz", HandleHealthz)
 	mux.HandleFunc("/readyz", HandleReadyz)
-	mux.HandleFunc("/api/chaos/stress", HandleChaosStress)
-	mux.HandleFunc("/api/chaos/network", HandleChaosNetwork)
 	mux.HandleFunc("/api/diagnostics", HandleDiagnostics)
 	mux.HandleFunc("/api/logs/stream", HandleRCALogStream)
 	mux.HandleFunc("/api/mask", HandleMaskTest)
@@ -398,74 +393,6 @@ func HandleReadyz(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status": "ready"}`))
-}
-
-func HandleChaosStress(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "POST, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	var cmdArgs []string
-	if r.Method == http.MethodPost {
-		cmdArgs = []string{"apply", "-f", "/app/k3s/chaos-mesh/node-stress.yaml"}
-	} else if r.Method == http.MethodDelete {
-		cmdArgs = []string{"delete", "-f", "/app/k3s/chaos-mesh/node-stress.yaml"}
-	} else {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
-	cmd := execCommand("kubectl", cmdArgs...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		slog.Error("Failed to manage stress chaos", "error", err, "output", string(out))
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, `{"error": "%s", "output": %q}`, err.Error(), string(out))
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"status": "success", "output": %q}`, string(out))
-}
-
-func HandleChaosNetwork(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "POST, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	var cmdArgs []string
-	if r.Method == http.MethodPost {
-		cmdArgs = []string{"apply", "-f", "/app/k3s/chaos-mesh/network-delay.yaml"}
-	} else if r.Method == http.MethodDelete {
-		cmdArgs = []string{"delete", "-f", "/app/k3s/chaos-mesh/network-delay.yaml"}
-	} else {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
-	cmd := execCommand("kubectl", cmdArgs...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		slog.Error("Failed to manage network chaos", "error", err, "output", string(out))
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, `{"error": "%s", "output": %q}`, err.Error(), string(out))
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"status": "success", "output": %q}`, string(out))
 }
 
 func HandleDiagnostics(w http.ResponseWriter, r *http.Request) {

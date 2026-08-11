@@ -143,7 +143,7 @@ test-k3s: ## Run cluster pod end-to-end loopback validation
 	kubectl exec -n gateway deploy/gateway -c gateway -- ls -la /tmp/shared
 	@echo "==> Validating completions masking inside pod..."
 	kubectl exec -n gateway deploy/gateway -c gateway -- wget -qO- \
-		--post-data='{"prompt": "Client SSN is 123-45-6789"}' \
+		--post-data='{"model": "qwen2.5:0.5b", "messages": [{"role": "user", "content": "Client SSN is 123-45-6789"}]}' \
 		--header='Content-Type: application/json' \
 		http://localhost:8080/v1/chat/completions
 
