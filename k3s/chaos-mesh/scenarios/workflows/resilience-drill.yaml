@@ -1,0 +1,55 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Workflow
+metadata:
+  name: resilience-drill
+  namespace: gateway
+spec:
+  entry: the-drill
+  templates:
+    - name: the-drill
+      templateType: Serial
+      children:
+        - network-delay-step
+        - recovery-pause-1
+        - cpu-stress-step
+        - recovery-pause-2
+
+    - name: network-delay-step
+      templateType: NetworkChaos
+      deadline: 1m
+      networkChaos:
+        action: delay
+        mode: all
+        selector:
+          namespaces:
+            - gateway
+          labelSelectors:
+            app: gateway
+        delay:
+          latency: '300ms'
+          correlation: '50'
+          jitter: '50ms'
+        direction: to
+
+    - name: recovery-pause-1
+      templateType: Suspend
+      deadline: 30s
+
+    - name: cpu-stress-step
+      templateType: StressChaos
+      deadline: 1m
+      stressChaos:
+        mode: all
+        selector:
+          namespaces:
+            - gateway
+          labelSelectors:
+            app: gateway
+        stressors:
+          cpu:
+            workers: 2
+            load: 80
+
+    - name: recovery-pause-2
+      templateType: Suspend
+      deadline: 30s
