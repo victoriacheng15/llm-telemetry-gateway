@@ -1,15 +1,17 @@
 apiVersion: chaos-mesh.org/v1alpha1
-kind: PodChaos
+kind: NetworkChaos
 metadata:
-  name: sidecar-kill
+  name: network-corrupt
   namespace: gateway
 spec:
-  action: container-kill
+  action: corrupt
   mode: all
-  containerNames:
-    - sidecar
   selector:
     namespaces:
       - gateway
     labelSelectors:
       app: gateway
+  corrupt:
+    corrupt: '20'
+    correlation: '20'
+  direction: to

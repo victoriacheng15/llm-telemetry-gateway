@@ -1,7 +1,7 @@
 apiVersion: chaos-mesh.org/v1alpha1
-kind: StressChaos
+kind: HTTPChaos
 metadata:
-  name: node-stress
+  name: http-abort
   namespace: gateway
 spec:
   mode: all
@@ -10,11 +10,8 @@ spec:
       - gateway
     labelSelectors:
       app: gateway
-  stressors:
-    cpu:
-      workers: 1
-      load: 50
-    memory:
-      workers: 1
-      size: '128MB'
-  duration: '5m'
+  target: Request
+  port: 8080
+  path: /v1/chat/completions
+  abort: true
+  code: 500

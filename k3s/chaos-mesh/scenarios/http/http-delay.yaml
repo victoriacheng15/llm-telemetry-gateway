@@ -1,0 +1,16 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: HTTPChaos
+metadata:
+  name: http-delay
+  namespace: gateway
+spec:
+  mode: all
+  selector:
+    namespaces:
+      - gateway
+    labelSelectors:
+      app: gateway
+  target: Request
+  port: 8080
+  path: /v1/chat/completions
+  delay: '2s'
