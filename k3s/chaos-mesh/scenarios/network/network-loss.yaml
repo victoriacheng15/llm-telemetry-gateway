@@ -1,0 +1,17 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-loss
+  namespace: gateway
+spec:
+  action: loss
+  mode: all
+  selector:
+    namespaces:
+      - gateway
+    labelSelectors:
+      app: gateway
+  loss:
+    loss: '25'
+    correlation: '25'
+  direction: to

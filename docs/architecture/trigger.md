@@ -39,7 +39,7 @@ You can simulate different incident scenarios by applying different Chaos Mesh m
 Simulate host-level CPU and Memory starvation:
 
 ```bash
-kubectl apply -f k3s/chaos-mesh/node-stress.yaml
+kubectl apply -f k3s/chaos-mesh/scenarios/stress/cpu-stress.yaml
 ```
 
 - **Active Metric Anomalies**: Spikes host CPU/Memory beyond configured thresholds (`5.0%` CPU, `60.0%` Memory in the sandbox VM).
@@ -51,7 +51,7 @@ Simulate network latency on outbound completions traffic:
 
 ```bash
 # 1. Apply network delay chaos manifest
-kubectl apply -f k3s/chaos-mesh/network-delay.yaml
+kubectl apply -f k3s/chaos-mesh/scenarios/network/network-delay.yaml
 
 # 2. Generate traffic through the completions gateway to trigger latency metrics
 make test-k3s
@@ -100,8 +100,8 @@ Once verified, remove the active chaos policies to restore system metrics to nom
 
 ```bash
 # Remove Resource Stress
-kubectl delete -f k3s/chaos-mesh/node-stress.yaml
+kubectl delete -f k3s/chaos-mesh/scenarios/stress/cpu-stress.yaml
 
 # Remove Network Delay
-kubectl delete -f k3s/chaos-mesh/network-delay.yaml
+kubectl delete -f k3s/chaos-mesh/scenarios/network/network-delay.yaml
 ```

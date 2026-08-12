@@ -71,7 +71,7 @@ helm upgrade --install chaos-mesh chaos-mesh/chaos-mesh \
   --values k3s/chaos-mesh/values.yaml
 
 # 5. Inject network delay chaos policy
-kubectl apply -f k3s/chaos-mesh/network-delay.yaml
+kubectl apply -f k3s/chaos-mesh/scenarios/network/network-delay.yaml
 ```
 
 ---
