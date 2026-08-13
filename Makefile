@@ -148,6 +148,38 @@ test-k3s: ## Run cluster pod end-to-end loopback validation
 		http://localhost:8080/v1/chat/completions
 
 # ==============================================================================
+# SHOWCASE DEV CONTAINER TARGETS
+# ==============================================================================
+
+CONTAINER_ENGINE  ?= podman
+SHOWCASE_IMAGE    ?= showcase-dev
+SHOWCASE_CONTAINER ?= showcase-dev
+
+.PHONY: showcase-build showcase-run showcase-logs showcase-clean
+
+showcase-build: ## Build the showcase development container image
+	@echo "==> Building showcase development container image..."
+	$(CONTAINER_ENGINE) build -t $(SHOWCASE_IMAGE) -f docker/showcase/Dockerfile .
+
+showcase-run: ## Run the showcase container in dev mode with live reload
+	@echo "==> Running showcase dev container on http://localhost:3000..."
+	$(CONTAINER_ENGINE) run --rm -it \
+		-v "$(PWD)/cmd":/workspace/cmd:Z \
+		-v "$(PWD)/internal/web/showcase":/workspace/internal/web/showcase:Z \
+		-p 3000:3000 \
+		--name $(SHOWCASE_CONTAINER) \
+		$(SHOWCASE_IMAGE)
+
+showcase-logs: ## Follow logs of the running showcase dev container
+	$(CONTAINER_ENGINE) logs -f $(SHOWCASE_CONTAINER)
+
+showcase-clean: ## Stop and remove the showcase dev container and image
+	@echo "==> Cleaning up showcase dev container..."
+	-$(CONTAINER_ENGINE) stop $(SHOWCASE_CONTAINER)
+	$(CONTAINER_ENGINE) rmi --force $(SHOWCASE_IMAGE)
+	@echo "Image '$(SHOWCASE_IMAGE)' removed."
+
+# ==============================================================================
 # COMPOSITE & AUTOMATION TARGETS
 # ==============================================================================
 

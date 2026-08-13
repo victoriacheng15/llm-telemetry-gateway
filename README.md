@@ -65,22 +65,37 @@ The system processes requests and manages state through simplified operational p
 
 ## Local Setup
 
-Compile the Go completions proxy statically:
+### Gateway & Sidecar
+
+Set up the Python policy environment and build the Go completions proxy statically:
 
 ```bash
-make install
-make build-go
+make install   # Setup Python virtualenv and dependencies
+make build-go  # Compile static Go gateway binary
 ```
 
-Run checks:
+### Showcase Website Development
+
+Build and run the local documentation and showcase website container with hot-reloading:
 
 ```bash
-make test      # Runs Go and Python unit tests
-make test-k3s  # Runs cluster pod end-to-end loopback validation
-make lint      # Runs Go, Python, Markdown, and Kubernetes manifest linters
-make fmt       # Formats all source files
+make showcase-build  # Build the development container image
+make showcase-run    # Run the container in interactive live-reload mode
+make showcase-logs   # Follow live container logs
+make showcase-clean  # Stop and clean up the container and image
 ```
 
-Deploy infrastructure:
+### Quality Verification & Linting
+
+Run automated tests, verification scripts, formatters, and code quality linters:
+
+```bash
+make lint      # Run Go, Python, Markdown, and Kubernetes linters
+make fmt       # Auto-format all Go, Python, and Markdown files
+make test      # Run all Go and Python unit tests
+make test-k3s  # Run live in-cluster pod E2E loopback validation
+```
+
+### Infrastructure Deployment
 
 For complete bootstrap instructions, cluster configuration, and chaos engineering steps, refer to [k3s/README.md](./k3s/README.md).

@@ -1,0 +1,19 @@
+root    = "."
+tmp_dir = ".air-tmp"
+
+[build]
+  cmd = "go build -o .air-tmp/showcase-dev ./cmd/showcase-dev"
+  bin = ".air-tmp/showcase-dev"
+
+  include_ext = ["go", "html", "md", "css", "yaml", "yml", "toml"]
+  include_dir = ["cmd", "internal"]
+  exclude_dir = ["dist", ".git", ".air-tmp"]
+
+  kill_delay = "200ms"
+  delay      = 500
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true
