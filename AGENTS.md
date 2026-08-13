@@ -63,6 +63,15 @@ make build-go        # Build static Go gateway binary (bin/gateway)
 make build-showcase  # Generate showcase static site assets into dist/
 ```
 
+### Showcase Development
+
+```bash
+make showcase-build  # Build the showcase development container image
+make showcase-run    # Run the showcase container in dev mode with live reload
+make showcase-logs   # Follow logs of the running showcase dev container
+make showcase-clean  # Stop and remove the showcase dev container and image
+```
+
 ### Kubernetes & Deployment
 
 ```bash
