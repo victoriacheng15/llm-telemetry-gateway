@@ -311,10 +311,17 @@ func (t *MetricsTracker) GetMetrics(duration time.Duration) MetricsResponse {
 		currentP95 = recentDurations[int(float64(len(recentDurations))*0.95)]
 		currentP99 = recentDurations[int(float64(len(recentDurations))*0.99)]
 	} else if len(t.requests) > 0 {
-		lastReq := t.requests[len(t.requests)-1]
-		currentAvg = lastReq.Duration * 1000
-		currentP95 = lastReq.Duration * 1000
-		currentP99 = lastReq.Duration * 1000
+		var sum float64
+		allDurs := make([]float64, len(t.requests))
+		for idx, req := range t.requests {
+			val := req.Duration * 1000
+			sum += val
+			allDurs[idx] = val
+		}
+		sort.Float64s(allDurs)
+		currentAvg = sum / float64(len(t.requests))
+		currentP95 = allDurs[int(float64(len(allDurs))*0.95)]
+		currentP99 = allDurs[int(float64(len(allDurs))*0.99)]
 	}
 
 	numPoints := 30

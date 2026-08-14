@@ -11,8 +11,8 @@
         <h1>LLM Telemetry Gateway - IDP Console</h1>
         <aside class="header-meta">
             <p class="status-indicator">
-                <span class="status-dot"></span>
-                <span>Status: Active</span>
+                <span class="status-dot" id="status-dot"></span>
+                <span id="status-text">Status: Active</span>
             </p>
             <a href="http://localhost:32256" target="_blank" class="chaos-link">Chaos Dashboard</a>
         </aside>
@@ -24,10 +24,10 @@
             <header class="metrics-header">
                 <h2 class="metrics-title">Pod Telemetry Metrics</h2>
                 <select id="metrics-range" aria-label="Time Range">
-                    <option value="15m" selected>Past 15 min</option>
+                    <option value="5m" selected>Past 5 min</option>
+                    <option value="10m">Past 10 min</option>
+                    <option value="15m">Past 15 min</option>
                     <option value="30m">Past 30 min</option>
-                    <option value="1h">Past 1 hour</option>
-                    <option value="3h">Past 3 hours</option>
                 </select>
             </header>
             
@@ -76,7 +76,13 @@
 
         <!-- Incident Observability Logs -->
         <section class="logs-section" aria-label="AIOps Logs">
-            <h2 class="logs-title">AIOps Incident Observability Logs (Streaming)</h2>
+            <div class="logs-header">
+                <h2 class="logs-title">AIOps Incident Observability Logs (Streaming)</h2>
+                <div class="logs-controls">
+                    <button id="toggle-scroll" class="console-btn active">Auto-scroll: ON</button>
+                    <button id="clear-logs" class="console-btn">Clear Logs</button>
+                </div>
+            </div>
             <ol class="terminal" id="log-terminal"></ol>
         </section>
     </main>
@@ -116,19 +122,44 @@
 
         async function fetchMetrics() {
             const rangeSelect = document.getElementById('metrics-range');
-            const range = rangeSelect ? rangeSelect.value : '15m';
+            const range = rangeSelect ? rangeSelect.value : '5m';
             try {
                 const response = await fetch(`/api/metrics?range=${range}`);
                 if (response.ok) {
                     const data = await response.json();
                     
                     // Update text values
-                    document.getElementById('metric-cpu').textContent = `${data.cpu_usage.toFixed(1)}%`;
-                    document.getElementById('metric-memory').textContent = formatBytes(data.memory_usage);
+                    const cpuUsage = data.cpu_usage;
+                    const memoryUsage = data.memory_usage;
+                    const latencyAvg = data.latency_avg;
+                    const latencyP95 = data.latency_p95;
+                    const latencyP99 = data.latency_p99;
+
+                    document.getElementById('metric-cpu').textContent = `${cpuUsage.toFixed(1)}%`;
+                    document.getElementById('metric-memory').textContent = formatBytes(memoryUsage);
                     document.getElementById('metric-tokens').textContent = `${data.token_throughput.toFixed(1)} t/s`;
-                    document.getElementById('metric-latency-avg').textContent = `${data.latency_avg.toFixed(0)} ms`;
-                    document.getElementById('metric-latency-p95').textContent = `${data.latency_p95.toFixed(0)} ms`;
-                    document.getElementById('metric-latency-p99').textContent = `${data.latency_p99.toFixed(0)} ms`;
+                    document.getElementById('metric-latency-avg').textContent = `${latencyAvg.toFixed(0)} ms`;
+                    document.getElementById('metric-latency-p95').textContent = `${latencyP95.toFixed(0)} ms`;
+                    document.getElementById('metric-latency-p99').textContent = `${latencyP99.toFixed(0)} ms`;
+
+                    // Style cards with warning classes based on thresholds
+                    const cpuCard = document.getElementById('metric-cpu').closest('.metric-card');
+                    if (cpuCard) cpuCard.classList.toggle('warning', cpuUsage > 70);
+
+                    const memoryCard = document.getElementById('metric-memory').closest('.metric-card');
+                    if (memoryCard) {
+                        const isMemWarning = memLimit > 0 && (memoryUsage / memLimit) > 0.70;
+                        memoryCard.classList.toggle('warning', isMemWarning);
+                    }
+
+                    const latencyAvgCard = document.getElementById('metric-latency-avg').closest('.metric-card');
+                    if (latencyAvgCard) latencyAvgCard.classList.toggle('warning', latencyAvg > 150);
+
+                    const latencyP95Card = document.getElementById('metric-latency-p95').closest('.metric-card');
+                    if (latencyP95Card) latencyP95Card.classList.toggle('warning', latencyP95 > 250);
+
+                    const latencyP99Card = document.getElementById('metric-latency-p99').closest('.metric-card');
+                    if (latencyP99Card) latencyP99Card.classList.toggle('warning', latencyP99 > 350);
 
                     // Render sparkline charts
                     renderChart('chart-cpu', data.cpu_history, 100);
@@ -163,6 +194,22 @@
                 bar.className = 'chart-bar';
                 const heightPct = limitMax > 0 ? (val / limitMax) * 100 : 0;
                 bar.style.height = `${Math.max(4, Math.min(100, heightPct))}%`;
+                
+                // Format hover tooltip value
+                let displayVal = '';
+                if (elementId.includes('cpu')) {
+                    displayVal = `${val.toFixed(1)}%`;
+                } else if (elementId.includes('memory')) {
+                    displayVal = formatBytes(val);
+                } else if (elementId.includes('tokens')) {
+                    displayVal = `${val.toFixed(1)} t/s`;
+                } else if (elementId.includes('latency')) {
+                    displayVal = `${val.toFixed(0)} ms`;
+                } else {
+                    displayVal = val.toString();
+                }
+                bar.setAttribute('data-value', displayVal);
+                
                 figure.appendChild(bar);
             });
         }
@@ -172,8 +219,44 @@
             if (!logTerminal) return;
 
             let lastLogItem = null;
+            let autoScroll = true;
+
+            const toggleScrollBtn = document.getElementById('toggle-scroll');
+            if (toggleScrollBtn) {
+                toggleScrollBtn.addEventListener('click', () => {
+                    autoScroll = !autoScroll;
+                    if (autoScroll) {
+                        toggleScrollBtn.classList.add('active');
+                        toggleScrollBtn.textContent = 'Auto-scroll: ON';
+                        logTerminal.scrollTop = logTerminal.scrollHeight;
+                    } else {
+                        toggleScrollBtn.classList.remove('active');
+                        toggleScrollBtn.textContent = 'Auto-scroll: OFF';
+                    }
+                });
+            }
+
+            const clearLogsBtn = document.getElementById('clear-logs');
+            if (clearLogsBtn) {
+                clearLogsBtn.addEventListener('click', () => {
+                    logTerminal.innerHTML = '';
+                    lastLogItem = null;
+                });
+            }
 
             const eventSource = new EventSource('/api/logs/stream');
+
+            eventSource.onopen = () => {
+                const dot = document.getElementById('status-dot');
+                const text = document.getElementById('status-text');
+                if (dot) {
+                    dot.className = 'status-dot';
+                }
+                if (text) {
+                    text.textContent = 'Status: Active';
+                }
+            };
+
             eventSource.onmessage = (event) => {
                 const lineText = event.data;
                 if (!lineText) return;
@@ -233,7 +316,9 @@
                     }
                 }
                 
-                logTerminal.scrollTop = logTerminal.scrollHeight;
+                if (autoScroll) {
+                    logTerminal.scrollTop = logTerminal.scrollHeight;
+                }
                 
                 while (logTerminal.childElementCount > 100) {
                     logTerminal.removeChild(logTerminal.firstChild);
@@ -242,6 +327,23 @@
             
             eventSource.onerror = (err) => {
                 console.error('SSE log stream connection error, reconnecting...', err);
+                const dot = document.getElementById('status-dot');
+                const text = document.getElementById('status-text');
+                if (eventSource.readyState === EventSource.CONNECTING) {
+                    if (dot) {
+                        dot.className = 'status-dot connecting';
+                    }
+                    if (text) {
+                        text.textContent = 'Status: Reconnecting...';
+                    }
+                } else {
+                    if (dot) {
+                        dot.className = 'status-dot disconnected';
+                    }
+                    if (text) {
+                        text.textContent = 'Status: Disconnected';
+                    }
+                }
             };
         }
 
