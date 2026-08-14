@@ -493,7 +493,13 @@ func (t *MetricsTracker) evaluateTelemetry(ctx context.Context) {
 	t.mu.RUnlock()
 
 	var anomalies []string
-	if cpuUsage > 80.0 {
+	cpuThreshold := 80.0
+	if envVal := os.Getenv("ANOMALY_CPU_THRESHOLD"); envVal != "" {
+		if val, err := strconv.ParseFloat(envVal, 64); err == nil {
+			cpuThreshold = val
+		}
+	}
+	if cpuUsage > cpuThreshold {
 		anomalies = append(anomalies, fmt.Sprintf("High Pod CPU Utilization: %.2f%%", cpuUsage))
 	}
 
@@ -502,7 +508,13 @@ func (t *MetricsTracker) evaluateTelemetry(ctx context.Context) {
 	if memLimitBytes > 0 {
 		memUsagePct = (float64(memUsage) / float64(memLimitBytes)) * 100.0
 	}
-	if memUsagePct > 80.0 {
+	memThreshold := 80.0
+	if envVal := os.Getenv("ANOMALY_MEMORY_THRESHOLD"); envVal != "" {
+		if val, err := strconv.ParseFloat(envVal, 64); err == nil {
+			memThreshold = val
+		}
+	}
+	if memUsagePct > memThreshold {
 		anomalies = append(anomalies, fmt.Sprintf("High Pod Memory Utilization: %.2f%%", memUsagePct))
 	}
 
@@ -518,11 +530,17 @@ func (t *MetricsTracker) evaluateTelemetry(ctx context.Context) {
 	t.mu.RLock()
 	hasHighLatency := false
 	var lastDur float64
+	latencyThreshold := 0.2
+	if envVal := os.Getenv("ANOMALY_LATENCY_THRESHOLD"); envVal != "" {
+		if val, err := strconv.ParseFloat(envVal, 64); err == nil {
+			latencyThreshold = val
+		}
+	}
 	for i := len(t.requests) - 1; i >= 0; i-- {
 		if time.Since(t.requests[i].Timestamp) > 10*time.Second {
 			break
 		}
-		if t.requests[i].Duration > 0.2 {
+		if t.requests[i].Duration > latencyThreshold {
 			hasHighLatency = true
 			lastDur = t.requests[i].Duration
 			break
