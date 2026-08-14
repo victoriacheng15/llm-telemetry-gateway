@@ -913,17 +913,17 @@ func TestHandleMetricsAndLimits(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name:           "metrics GET success 1h",
+			name:           "metrics GET success 10m",
 			endpoint:       "metrics",
 			method:         "GET",
-			url:            "/api/metrics?range=1h",
+			url:            "/api/metrics?range=10m",
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name:           "metrics GET success 3h",
+			name:           "metrics GET success 5m",
 			endpoint:       "metrics",
 			method:         "GET",
-			url:            "/api/metrics?range=3h",
+			url:            "/api/metrics?range=5m",
 			expectedStatus: http.StatusOK,
 		},
 		{

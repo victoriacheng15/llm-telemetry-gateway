@@ -66,14 +66,14 @@ func HandleMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rangeStr := r.URL.Query().Get("range")
-	duration := 15 * time.Minute
+	duration := 5 * time.Minute
 	switch rangeStr {
+	case "10m":
+		duration = 10 * time.Minute
+	case "15m":
+		duration = 15 * time.Minute
 	case "30m":
 		duration = 30 * time.Minute
-	case "1h":
-		duration = time.Hour
-	case "3h":
-		duration = 3 * time.Hour
 	}
 
 	metrics := globalTracker.GetMetrics(duration)
