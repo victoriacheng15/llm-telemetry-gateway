@@ -106,37 +106,34 @@ fmt-py: ## Format Python code
 # KUBERNETES & CONTAINER TARGETS
 # ==============================================================================
 
-.PHONY: lint-k3s deploy scale-down scale-up test-k3s
+.PHONY: lint-k3s bootstrap teardown port-forward port-forward-bg port-forward-stop port-forward-status test-k3s
+
+bootstrap: ## Bootstrap local cluster, compile binary, apply manifests, and warm models
+	@echo "==> Bootstrapping local Kubernetes environment..."
+	bash scripts/bootstrap.sh
+
+teardown: ## Teardown local cluster resources, port-forwards, and namespaces
+	@echo "==> Tearing down local Kubernetes environment..."
+	bash scripts/teardown.sh
+
+port-forward: ## Run local port-forwards in the foreground
+	@echo "==> Launching local port-forwarding session..."
+	bash scripts/port-forward.sh run all
+
+port-forward-bg: ## Start local port-forwards in the background
+	@echo "==> Starting background port-forwarding..."
+	bash scripts/port-forward.sh start all
+
+port-forward-stop: ## Stop background port-forwards
+	@echo "==> Stopping background port-forwarding..."
+	bash scripts/port-forward.sh stop
+
+port-forward-status: ## Check status of port-forwarded endpoints
+	bash scripts/port-forward.sh status
 
 lint-k3s: ## Lint Kubernetes manifests using kube-linter
 	@echo "==> Linting Kubernetes manifests..."
 	~/go/bin/kube-linter lint k3s/
-
-deploy: ## Apply Kubernetes manifests to the cluster
-	@echo "==> Applying bootstrap resources..."
-	kubectl apply -f k3s/bootstrap/
-	@echo "==> Applying telemetry stack..."
-	kubectl apply -f k3s/telemetry/
-	@echo "==> Applying Ollama environment..."
-	kubectl apply -f k3s/ollama/
-	@echo "==> Applying gateway RBAC configuration..."
-	kubectl apply -f k3s/apps/rbac.yaml
-	@echo "==> Applying gateway NetworkPolicy..."
-	kubectl apply -f k3s/apps/network-policy.yaml
-	@echo "==> Applying gateway workload deployment..."
-	sed "s|/opt/llm-telemetry-gateway|$$PWD|g" k3s/apps/deployment.yaml | kubectl apply -f -
-
-scale-down: ## Scale down all sandbox deployments to 0 replicas
-	@echo "==> Scaling down all deployments to 0..."
-	kubectl scale deployment --all -n gateway --replicas=0
-	kubectl scale deployment --all -n telemetry --replicas=0
-	kubectl scale deployment --all -n ollama --replicas=0
-
-scale-up: ## Scale up all sandbox deployments to 1 replica
-	@echo "==> Scaling up all deployments to 1..."
-	kubectl scale deployment --all -n gateway --replicas=1
-	kubectl scale deployment --all -n telemetry --replicas=1
-	kubectl scale deployment --all -n ollama --replicas=1
 
 test-k3s: ## Run cluster pod end-to-end loopback validation
 	@echo "==> Verifying UDS socket mount inside pod..."
@@ -215,4 +212,4 @@ help: ## Show this help menu
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Targets:"
-	@grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
