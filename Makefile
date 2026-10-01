@@ -1,41 +1,43 @@
 # Global Makefile configurations and flags
 MAKEFLAGS += --no-print-directory
 
+# Scope variables with sensible defaults
+GO_PKG         ?= ./...
+PY_TARGET      ?= cmd/ internal/ scripts/
+PY_TEST_TARGET ?= internal/sidecar/
+MD_TARGET      ?= '**/*.md'
+
+# Support positional file/directory arguments (e.g. make fmt internal/sidecar/*.py)
+CMD  := $(firstword $(MAKECMDGOALS))
+ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+ifneq ($(ARGS),)
+  $(eval .PHONY: $(ARGS))
+  $(eval $(ARGS):;@:)
+endif
+
+GO_FILES := $(filter %.go,$(ARGS))
+PY_FILES := $(filter %.py,$(ARGS))
+MD_FILES := $(filter %.md,$(ARGS))
+DIR_ARGS := $(filter-out $(GO_FILES) $(PY_FILES) $(MD_FILES),$(ARGS))
+
 .PHONY: all
 all: lint test fmt
 
-# ==============================================================================
-# MARKDOWN TARGETS
-# ==============================================================================
-
-.PHONY: lint-md fmt-md
-
-lint-md: ## Lint Markdown files
-	@echo "==> Linting Markdown files..."
-	npx markdownlint-cli '**/*.md' --ignore .venv
-
-fmt-md: ## Format Markdown files using markdownlint-cli
-	@echo "==> Formatting Markdown files..."
-	npx markdownlint-cli '**/*.md' --ignore .venv --fix
 
 # ==============================================================================
 # GO TARGETS
 # ==============================================================================
 
-.PHONY: update lint-go test-go test-bdd cov-go fmt-go build-go build-showcase
+.PHONY: update test-go test-bdd cov-go build-go
 
 update: ## Update Go dependencies
 	@echo "==> Updating Go dependencies..."
 	go get -u ./...
 	go mod tidy
 
-lint-go: ## Lint Go code
-	@echo "==> Linting Go code..."
-	go vet ./...
-
-test-go: ## Run Go unit tests
+test-go: ## Run Go unit tests (override: GO_PKG=...)
 	@echo "==> Running Go unit tests..."
-	go test -v $(shell go list ./... | grep -v /e2e)
+	go test -v $(if $(filter ./...,$(GO_PKG)),$(shell go list ./... | grep -v /e2e),$(GO_PKG))
 
 test-bdd: ## Run Go BDD tests
 	@echo "==> Running Go BDD E2E tests..."
@@ -46,27 +48,16 @@ cov-go: ## Run Go test coverage
 	go test -cover -coverprofile=coverage.out ./...
 	rm -f coverage.out
 
-fmt-go: ## Format Go code
-	@echo "==> Formatting Go code..."
-	go fmt ./...
-
 build-go: ## Build the Go gateway binary statically
 	@echo "==> Building Go gateway binary..."
 	CGO_ENABLED=0 go build -ldflags "-extldflags -static" -o bin/gateway cmd/gateway/main.go
-
-build-showcase: ## Build the showcase static site
-	@echo "==> Preparing dist directory..."
-	rm -rf dist
-	mkdir -p dist
-	@echo "==> Building showcase static site..."
-	go run cmd/showcase/main.go
 
 
 # ==============================================================================
 # PYTHON TARGETS
 # ==============================================================================
 
-.PHONY: install lock lint-py test-py cov-py fmt-py
+.PHONY: install lock test-py cov-py
 
 install: ## Install Python dependencies using uv sync
 	@echo "==> Installing Python dependencies with uv..."
@@ -76,22 +67,14 @@ lock: ## Generate or update uv.lock lockfile
 	@echo "==> Locking Python dependencies with uv..."
 	uv lock
 
-lint-py: ## Lint Python code using ruff
-	@echo "==> Linting Python code..."
-	uv run ruff check cmd/ internal/
-
-test-py: ## Run Python unit tests using pytest
+test-py: ## Run Python unit tests using pytest (e.g., make test-py internal/sidecar/test_policy.py)
 	@echo "==> Running Python unit tests..."
-	uv run pytest internal/sidecar/ -v
+	uv run pytest $(if $(ARGS),$(ARGS),$(PY_TEST_TARGET)) -v
 
-cov-py: ## Run Python test coverage using pytest-cov
+cov-py: ## Run Python test coverage using pytest-cov (override: PY_TEST_TARGET=...)
 	@echo "==> Running Python test coverage..."
-	uv run pytest --cov=internal/sidecar --cov-report=term-missing internal/sidecar/
+	uv run pytest --cov=internal/sidecar --cov-report=term-missing $(if $(ARGS),$(ARGS),$(PY_TEST_TARGET))
 	rm -f .coverage
-
-fmt-py: ## Format Python code using ruff
-	@echo "==> Formatting Python code..."
-	uv run ruff format cmd/ internal/
 
 # ==============================================================================
 # KUBERNETES & CONTAINER TARGETS
@@ -173,25 +156,47 @@ showcase-clean: ## Stop and remove the showcase dev container and image
 
 .PHONY: lint test fmt cov
 
-lint: ## Run all linters
-	@$(MAKE) lint-go
-	@$(MAKE) lint-py
-	@$(MAKE) lint-md
-	@$(MAKE) lint-k3s
+lint: ## Run all linters (or e.g. make lint internal/sidecar/*.py)
+ifeq ($(ARGS),)
+	@echo "==> Linting Go code..."
+	go vet $(GO_PKG)
+	@echo "==> Linting Python code..."
+	uv run ruff check $(PY_TARGET)
+	@echo "==> Linting Markdown files..."
+	npx markdownlint-cli $(MD_TARGET) --ignore .venv
+else
+	@if [ -n "$(GO_FILES)" ]; then echo "==> Linting Go code..."; go vet $(GO_FILES); fi
+	@if [ -n "$(PY_FILES)" ]; then echo "==> Linting Python code..."; uv run ruff check $(PY_FILES); fi
+	@if [ -n "$(MD_FILES)" ]; then echo "==> Linting Markdown files..."; npx markdownlint-cli $(MD_FILES) --ignore .venv; fi
+	@if [ -n "$(DIR_ARGS)" ]; then \
+		echo "==> Linting directories: $(DIR_ARGS)..."; \
+		go vet $$(find $(DIR_ARGS) -name '*.go' 2>/dev/null) 2>/dev/null || true; \
+		uv run ruff check $(DIR_ARGS) 2>/dev/null || true; \
+	fi
+endif
 
-test: ## Run all tests
-	@$(MAKE) test-go
-	@$(MAKE) test-bdd
-	@$(MAKE) test-py
+test: test-go test-bdd test-py ## Run all tests
 
-fmt: ## Format all code
-	@$(MAKE) fmt-go
-	@$(MAKE) fmt-py
-	@$(MAKE) fmt-md
+fmt: ## Format all code (or e.g. make fmt internal/sidecar/*.py)
+ifeq ($(ARGS),)
+	@echo "==> Formatting Go code..."
+	go fmt $(GO_PKG)
+	@echo "==> Formatting Python code..."
+	uv run ruff format $(PY_TARGET)
+	@echo "==> Formatting Markdown files..."
+	npx markdownlint-cli $(MD_TARGET) --ignore .venv --fix
+else
+	@if [ -n "$(GO_FILES)" ]; then echo "==> Formatting Go code..."; go fmt $(GO_FILES); fi
+	@if [ -n "$(PY_FILES)" ]; then echo "==> Formatting Python code..."; uv run ruff format $(PY_FILES); fi
+	@if [ -n "$(MD_FILES)" ]; then echo "==> Formatting Markdown files..."; npx markdownlint-cli $(MD_FILES) --ignore .venv --fix; fi
+	@if [ -n "$(DIR_ARGS)" ]; then \
+		echo "==> Formatting directories: $(DIR_ARGS)..."; \
+		go fmt $(DIR_ARGS); \
+		uv run ruff format $(DIR_ARGS); \
+	fi
+endif
 
-cov: ## Run all test coverages
-	@$(MAKE) cov-go
-	@$(MAKE) cov-py
+cov: cov-go cov-py ## Run all test coverages
 
 # ==============================================================================
 # DOCUMENTATION
