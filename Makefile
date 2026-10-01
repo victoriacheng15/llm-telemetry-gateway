@@ -66,41 +66,32 @@ build-showcase: ## Build the showcase static site
 # PYTHON TARGETS
 # ==============================================================================
 
-.PHONY: freeze install lint-py test-py cov-py fmt-py
+.PHONY: install lock lint-py test-py cov-py fmt-py
 
-freeze: ## Freeze Python dependencies inside virtualenv to requirements.txt
-	@echo "==> Freezing Python dependencies..."
-	.venv/bin/pip freeze > requirements.txt
+install: ## Install Python dependencies using uv sync
+	@echo "==> Installing Python dependencies with uv..."
+	uv sync
 
-install: ## Install Python dependencies inside virtualenv from requirements.txt
-	@echo "==> Installing Python dependencies..."
-	python3 -m venv .venv
-	.venv/bin/pip install -r requirements.txt
+lock: ## Generate or update uv.lock lockfile
+	@echo "==> Locking Python dependencies with uv..."
+	uv lock
 
-lint-py: ## Lint Python code
+lint-py: ## Lint Python code using ruff
 	@echo "==> Linting Python code..."
-	@if [ -f .venv/bin/ruff ]; then \
-		.venv/bin/ruff check cmd/ internal/; \
-	else \
-		echo "Warning: 'ruff' not found in virtualenv. Skipping Python linting."; \
-	fi
+	uv run ruff check cmd/ internal/
 
 test-py: ## Run Python unit tests using pytest
 	@echo "==> Running Python unit tests..."
-	PYTHONPATH=. .venv/bin/python -m pytest internal/sidecar/ -v
+	uv run pytest internal/sidecar/ -v
 
 cov-py: ## Run Python test coverage using pytest-cov
 	@echo "==> Running Python test coverage..."
-	PYTHONPATH=. .venv/bin/python -m pytest --cov=internal/sidecar --cov-report=term-missing internal/sidecar/
+	uv run pytest --cov=internal/sidecar --cov-report=term-missing internal/sidecar/
 	rm -f .coverage
 
-fmt-py: ## Format Python code
+fmt-py: ## Format Python code using ruff
 	@echo "==> Formatting Python code..."
-	@if [ -f .venv/bin/ruff ]; then \
-		.venv/bin/ruff format cmd/ internal/; \
-	else \
-		echo "Warning: 'ruff' not found in virtualenv. Skipping Python formatting."; \
-	fi
+	uv run ruff format cmd/ internal/
 
 # ==============================================================================
 # KUBERNETES & CONTAINER TARGETS
