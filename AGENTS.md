@@ -75,9 +75,9 @@ make showcase-clean  # Stop and remove the showcase dev container and image
 ### Kubernetes & Deployment
 
 ```bash
-make deploy      # Apply all Kubernetes manifests (bootstrap, telemetry, apps)
-make scale-down  # Scale down sandbox deployments to 0 replicas
-make scale-up    # Scale up sandbox deployments to 1 replica
+make bootstrap   # Bootstrap local cluster, compile binary, apply manifests, and warm models
+make teardown    # Teardown local cluster resources, port-forwards, and namespaces
+make port-forward # Run centralized port-forwards across all services
 make test-k3s    # Run in-cluster pod verification and loopback tests
 ```
 
