@@ -21,8 +21,8 @@ The repository consists of four core components:
 
 ```bash
 make update    # Update Go dependencies and tidy go.mod / go.sum
-make install   # Create Python virtual environment (.venv) and install dependencies
-make freeze    # Freeze Python virtual environment dependencies to requirements.txt
+make install   # Sync Python virtual environment dependencies using uv
+make lock      # Lock Python virtual environment dependencies with uv
 ```
 
 ### Quality Checks & Linting
