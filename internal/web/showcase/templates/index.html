@@ -2,6 +2,11 @@
 <!-- Architecture Section -->
 <section class="showcase-section">
   <h3>Architecture Blueprint</h3>
+  {{ if .Landing.Architecture.DiagramImage }}
+  <figure class="card architecture-figure">
+    <img src="{{ .Landing.Architecture.DiagramImage }}" alt="LLM Telemetry Gateway Architecture" class="architecture-img" loading="lazy">
+  </figure>
+  {{ end }}
   <pre class="card">{{ .Landing.Architecture.DiagramASCII }}</pre>
 </section>
 

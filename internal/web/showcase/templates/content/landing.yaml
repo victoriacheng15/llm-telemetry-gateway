@@ -5,13 +5,14 @@ header:
 llms:
   objective: "A low-overhead Go completions proxy with automated PII masking, namespaced pod-level telemetry pipelines, and closed-loop AIOps diagnostics powered by Ollama."
   stack: "Go, Python, OTel Collector, Prometheus, Grafana, Kubernetes (K3s), Chaos Mesh, Ollama"
-  pattern: "Data Plane Proxy with Sidecar AIOps Diagnostics"
-  entry_point: "cmd/gateway/main.go (Proxy) / internal/sidecar/policy.py (AIOps)"
+  pattern: "Data Plane Proxy with Sidecar PII Masking & In-Process AIOps"
+  entry_point: "cmd/gateway/main.go (Proxy & AIOps) / internal/sidecar/policy.py (PII Engine)"
   persistence_strategy: "Shared emptyDir volume for Unix Domain Sockets, crash-detection state tracking, and local diagnostics logs"
   observability: "cgroups CPU, cgroups memory, OpenTelemetry, Server-Sent Events, log streaming"
 
 # Architecture Blueprint
 architecture:
+  diagram_image: "assets/architecture.png"
   diagram_ascii: |4
            ┌────────┐             ┌────────────┐
            │ Client │             │ Chaos Mesh │
@@ -19,25 +20,35 @@ architecture:
                  │                       │
                  │ (Completions)         ├────────────────────────┐
                  ▼                       ▼ (Injects faults)       ▼ (Injects faults)
-          ┌─────────────────────┐ <──────┘               ┌─────────────────────┐
-          │ Gateway Proxy (Go)  │ <====================> │ Sidecar Policy (Py) │
-          └─────────────────────┘      (UDS Socket)      └─────────────────────┘
-                 │                                            │             │
-                 │ (Sends metrics)           (Scrapes metrics)│             │ (RCA queries)
-                 ▼                                            ▼             ▼
-          ┌───────────┐ <─────────────────────────────────────┘      ┌────────────┐
-          │ OTel      │                                              │ Ollama LLM │
-          │ Collector │                                              └────────────┘
+          ┌─────────────────────────────────────────────────────────────┐
+          │ Pod Boundary (gateway namespace)                            │
+          │                                                             │
+          │  ┌─────────────────────┐      (UDS Socket)      ┌────────┐  │
+          │  │ Gateway Proxy (Go)  │ <====================> │ Sidecar│  │
+          │  │ • PII Mask Client   │  {"prompt": "..."}     │ Policy │  │
+          │  │ • cgroups /proc Scrp│  {"sanitized": "..."}  │ (Py)   │  │
+          │  │ • AIOps & RCA Loop  │                        └────────┘  │
+          │  └──────────┬──────────┘                                    │
+          └─────────────┼───────────────────────────────────────────────┘
+                 │      │ (RCA queries)
+                 │      ▼
+                 │ ┌────────────┐
+                 │ │ Ollama LLM │
+                 │ └────────────┘
+                 ▼ (Prometheus metrics)
+          ┌───────────┐
+          │ OTel      │
+          │ Collector │
           └───────────┘
 
 # Core Components & Logic
 tech:
   - title: "Proxy Data Plane"
-    description: "Low-overhead Go completions proxy with automated regex-based PII masking at the pod boundary."
-  - title: "AIOps Sidecar"
-    description: "Autonomous Python diagnostics sidecar integrating with Ollama for closed-loop incident analysis."
-  - title: "Pod-Boundary Instrumentation"
-    description: "Resource telemetry extracted from namespaced cgroups to prevent host-level metric leakage."
+    description: "Low-overhead Go completions proxy intercepting inference requests and managing fail-closed UDS socket communication with the PII sidecar."
+  - title: "PII Policy Engine"
+    description: "High-throughput Python sidecar performing deterministic regex-based PII sanitization (SSN, credit cards, emails, API keys) before prompts leave the pod."
+  - title: "AIOps Telemetry Evaluator"
+    description: "Embedded Go telemetry loop scraping namespaced cgroups and /proc metrics, detecting threshold anomalies, and triggering Ollama for automated root cause analysis."
 
 # Validation & Resiliency Testing
 proof:
@@ -51,8 +62,10 @@ proof:
 # Design Trade-offs & Verification Logs
 reach:
   humble_pivots:
-    - title: "Sidecar vs In-Process Diagnostics"
-      description: "Transitioned from writing custom in-process diagnosis logic in Go to deploying an autonomous Python sidecar sharing emptyDir volumes. This separated the data-plane proxy concerns from the diagnostic LLM integration, ensuring gateway uptime during heavy model evaluation cycles."
+    - title: "Decoupling PII Policy to Unix Domain Socket"
+      description: "Separated deterministic PII masking into an isolated Python sidecar communicating via local Unix Domain Sockets over a shared emptyDir volume. This ensures strict fail-closed security at the pod boundary without compromising core proxy throughput or exposing unsanitized prompts."
+    - title: "Native Go Telemetry Scraping & In-Pod RCA"
+      description: "Consolidated cgroup resource scraping, Prometheus metric exports, and Ollama RCA triggering directly inside the Go proxy. This eliminated cross-process overhead for real-time Server-Sent Events (SSE) while keeping the Python sidecar strictly focused on sub-millisecond regex masking."
     - title: "BDD as an AI Development Guardrail"
       description: "Introduced behavior-driven development via Gherkin and Godog as a strict system guardrail. This ensures that any AI-generated code modifications behave exactly as specified by the target security and routing policies, eliminating regression risks during automated development cycles."
   objective_clarity:

@@ -50,6 +50,28 @@ func (g *Generator) Generate() error {
 		return err
 	}
 
+	// Copy assets (diagrams, images) to output directory if present
+	assetsDir := "docs/assets"
+	if entries, err := os.ReadDir(assetsDir); err == nil {
+		outAssetsDir := filepath.Join(g.OutputDir, "assets")
+		if err := os.MkdirAll(outAssetsDir, 0755); err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				src := filepath.Join(assetsDir, entry.Name())
+				dst := filepath.Join(outAssetsDir, entry.Name())
+				data, err := os.ReadFile(src)
+				if err != nil {
+					return err
+				}
+				if err := os.WriteFile(dst, data, 0644); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
 	// Render Landing (index.html)
 	if err := g.renderWithBase("index.html", "index.html", data); err != nil {
 		return err
