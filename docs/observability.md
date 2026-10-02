@@ -8,17 +8,7 @@ This document outlines the metrics schema, structured log specification, and Gra
 
 Metric ingestion leverages the OpenTelemetry (OTel) Collector to decouple metric gathering from database export routines:
 
-```mermaid
-flowchart TB
-    Proxy["Completions Proxy"]
-    -->|OTLP| Collector["OpenTelemetry Collector"]
-    
-    Collector
-    -->|Exporter| Prometheus["Prometheus"]
-    
-    Prometheus
-    -->|Datasource| Grafana["Grafana"]
-```
+![Metric Collection Pipeline](./assets/telemetry_pipeline.png)
 
 ### Exported Metrics Schema
 

@@ -20,24 +20,7 @@ The system processes requests and manages state through simplified operational p
 | Local Inference | Query LLM completions and execute diagnostics | `Go Proxy` -> `Ollama API` |
 | Incident Memory | Document and preserve architectural learnings | `ADRs` / `RCAs` / `Incidents` |
 
-```text
-           ┌────────┐             ┌────────────┐
-           │ Client │             │ Chaos Mesh │
-           └────────┘             └────────────┘
-                 │                       │
-                 │ (Completions)         ├────────────────────────┐
-                 ▼                       ▼ (Injects faults)       ▼ (Injects faults)
-          ┌─────────────────────┐ <──────┘               ┌─────────────────────┐
-          │ Gateway Proxy (Go)  │ <====================> │ Sidecar Policy (Py) │
-          └─────────────────────┘      (UDS Socket)      └─────────────────────┘
-                 │                                            │             │
-                 │ (Sends metrics)           (Scrapes metrics)│             │ (RCA queries)
-                 ▼                                            ▼             ▼
-          ┌───────────┐ <─────────────────────────────────────┘      ┌────────────┐
-          │ OTel      │                                              │ Ollama LLM │
-          │ Collector │                                              └────────────┘
-          └───────────┘
-```
+![LLM Telemetry Gateway Architecture](./docs/assets/architecture.png)
 
 ---
 
@@ -57,7 +40,7 @@ The system processes requests and manages state through simplified operational p
 
 ## Documentation
 
-- [Architecture](./docs/architecture/README.md)
+- [Architecture](./docs/architecture.md)
 - [Observability](./docs/observability.md)
 - [GitHub Workflows](./docs/workflows.md)
 
@@ -98,4 +81,13 @@ make test-k3s  # Run live in-cluster pod E2E loopback validation
 
 ### Infrastructure Deployment
 
-For complete bootstrap instructions, cluster configuration, and chaos engineering steps, refer to [k3s/README.md](./k3s/README.md).
+Provision the local Kubernetes cluster, run centralized port-forwarding, or clean up resources:
+
+```bash
+make bootstrap        # Bootstrap cluster, compile binary, apply manifests, and warm models
+make bootstrap-chaos  # Bootstrap cluster with Chaos Mesh installed
+make port-forward     # Run centralized port-forwards across all services
+make teardown         # Teardown cluster resources and clean up namespaces
+```
+
+For detailed architecture, resource limits, and chaos engineering steps, refer to [k3s/README.md](./k3s/README.md).

@@ -80,15 +80,23 @@ cov-py: ## Run Python test coverage using pytest-cov (override: PY_TEST_TARGET=.
 # KUBERNETES & CONTAINER TARGETS
 # ==============================================================================
 
-.PHONY: lint-k3s bootstrap teardown port-forward port-forward-bg port-forward-stop port-forward-status test-k3s
+.PHONY: lint-k3s bootstrap bootstrap-chaos teardown teardown-chaos port-forward port-forward-bg port-forward-stop port-forward-status test-k3s
 
 bootstrap: ## Bootstrap local cluster, compile binary, apply manifests, and warm models
 	@echo "==> Bootstrapping local Kubernetes environment..."
-	bash scripts/bootstrap.sh
+	bash scripts/bootstrap.sh $(ARGS)
+
+bootstrap-chaos: ## Bootstrap local cluster with Chaos Mesh installed
+	@echo "==> Bootstrapping local Kubernetes environment with Chaos Mesh..."
+	bash scripts/bootstrap.sh --with-chaos
 
 teardown: ## Teardown local cluster resources, port-forwards, and namespaces
 	@echo "==> Tearing down local Kubernetes environment..."
-	bash scripts/teardown.sh
+	bash scripts/teardown.sh $(ARGS)
+
+teardown-chaos: ## Teardown local cluster resources including Chaos Mesh
+	@echo "==> Tearing down local Kubernetes environment and Chaos Mesh..."
+	bash scripts/teardown.sh --with-chaos
 
 port-forward: ## Run local port-forwards in the foreground
 	@echo "==> Launching local port-forwarding session..."

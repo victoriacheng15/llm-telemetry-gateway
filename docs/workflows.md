@@ -1,47 +1,45 @@
 # Platform Workflows
 
-This document details the CI/CD and automation paths that validate the LLM Telemetry Gateway.
+This document details the CI/CD and automation architecture that validates the LLM Telemetry Gateway.
 
 ---
 
-## 📂 Core Workflows
+## 📂 Pipeline Architecture
 
-### 🚢 [Continuous Integration](../.github/workflows/ci.yml)
+The continuous integration pipeline (`.github/workflows/ci.yml`) uses a consolidated runner strategy to eliminate cloud VM provisioning waste, maintain warm toolchain caches, and deliver sub-minute validation feedback.
 
-The central pipeline that coordinates the parallel validation and linting of the gateway applications.
+![Continuous Integration Pipeline Architecture](./assets/ci_pipeline.png)
 
-- **Trigger**: Push or Pull Request targeting the main branch.
-- **Responsibility**: Detects modified files and triggers Go, Python, or Kubernetes checks conditionally.
-- **Key Feature**: Leverages path-filtering to execute only the jobs corresponding to the modified components.
+---
 
-### 🧪 [Go Lint & Test](../.github/workflows/ci.yml)
+## ⚙️ Core Pipeline Jobs
 
-Ensures code quality and functional correctness across Go completions proxy packages.
+### 1. 🔍 Detect File Changes
 
-- **Trigger**: File changes detected in the Go codebase.
-- **Responsibility**: Validates syntax via `go vet` and executes the full suite of table-driven tests.
-- **Key Feature**: Centralized cache management to speed up mod download times on runner setup.
+Coordinates conditional execution by inspecting modified paths in the commit diff.
 
-### 🐍 [Python Lint & Test](../.github/workflows/ci.yml)
+- **Trigger**: Push or Pull Request targeting `main`.
+- **Implementation**: Uses `dorny/paths-filter` to evaluate whether Go, Python, Kubernetes manifests, or Markdown files changed.
+- **Optimization**: Downstream test jobs only execute if their corresponding file paths were modified.
 
-Validates the asynchronous PII masking policy engine sidecar.
+### 2. 🚀 Unified App Runner (`app-ci`)
 
-- **Trigger**: File changes detected in the Python codebase.
-- **Responsibility**: Checks formatting and style conventions using Ruff, and executes unit tests.
-- **Key Feature**: Verifies socket unlinking and signal handlers to ensure clean teardown behavior.
+Consolidates polyglot application verification into a single, high-performance Ubuntu runner.
 
-### 🏗️ [Kubernetes Linting](../.github/workflows/ci.yml)
+- **Trigger**: Changes detected in Go, Python, or Markdown files.
+- **Toolchains**:
+  - `actions/setup-go`: Pre-warms Go module cache.
+  - `astral-sh/setup-uv`: Installs Python runtime and syncs `.venv` via `uv` in milliseconds.
+- **Execution Steps**:
+  - `make lint`: Unified linting sweep across `go vet`, `ruff check`, and `markdownlint-cli`. Supports targeted positional arguments (e.g. `make lint internal/sidecar/*.py`).
+  - `make test-py`: Sidecar unit tests via `pytest`.
+  - `make test-go`: Gateway unit tests.
+  - `make test-bdd`: Godog BDD end-to-end integration scenarios (`e2e/`).
 
-Validates the Kubernetes configurations and resource limits inside the cluster directory.
+### 3. 🏗️ Kubernetes Manifest Linting (`k3s-ci`)
 
-- **Trigger**: File changes detected in the K3s manifests.
-- **Responsibility**: Scans resource definitions to enforce best-practice limits and namespace bindings.
-- **Key Feature**: Automated static analysis via `kube-linter` to catch configuration bugs before deployment.
+Validates Kubernetes configurations, resource limits, and security policies inside `k3s/`.
 
-### 📝 [Markdown Linting](../.github/workflows/ci.yml)
-
-Enforces syntax and format consistency across all Markdown documentation files.
-
-- **Trigger**: File changes detected in Markdown files.
-- **Responsibility**: Scans documentation directories using `markdownlint-cli` to enforce formatting rules.
-- **Key Feature**: Automated layout verification protecting project operational memory documents.
+- **Trigger**: Changes detected in `k3s/**/*.yaml`.
+- **Implementation**: Executes `stackrox/kube-linter-action` in an isolated container environment.
+- **Enforcement**: Catches missing resource constraints, privileged containers, and namespace policy violations.

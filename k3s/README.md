@@ -48,7 +48,50 @@ The local LLM cognitive diagnostic engine is isolated into its own `ollama` name
 
 ## 🚀 Deterministic Bootstrap Sequence
 
-To deploy the infrastructure without scheduling conflicts (ensuring namespaces and LimitRanges are active before workloads schedule), apply the manifests in order:
+### One-Click Automated Bootstrap (Recommended)
+
+To compile the Go gateway binary, provision all namespaces and LimitRanges, deploy workloads, and warm local Ollama models in an automated, idempotent workflow:
+
+```bash
+make bootstrap
+# or directly:
+bash scripts/bootstrap.sh
+```
+
+To optionally provision Chaos Mesh for fault-injection testing:
+
+```bash
+make bootstrap-chaos
+# or directly:
+bash scripts/bootstrap.sh --with-chaos
+```
+
+To run centralized port-forwarding across the gateway, console, Prometheus, Grafana, and Ollama services:
+
+```bash
+make port-forward
+# or directly:
+bash scripts/port-forward.sh
+```
+
+To clean up all in-cluster resources, stop background port-forwards, and delete temporary namespaces:
+
+```bash
+make teardown
+# or directly:
+bash scripts/teardown.sh
+
+# To also uninstall Chaos Mesh:
+make teardown-chaos
+# or directly:
+bash scripts/teardown.sh --with-chaos
+```
+
+---
+
+### Manual Step-by-Step Bootstrap
+
+If applying manifests manually without scheduling conflicts (ensuring namespaces and LimitRanges are active before workloads schedule):
 
 ```bash
 # 1. Establish namespaces and resource boundaries
