@@ -28,20 +28,14 @@ make lock      # Lock Python virtual environment dependencies with uv
 ### Quality Checks & Linting
 
 ```bash
-make lint      # Run all linters (Go, Python, Markdown, K3s manifests)
-make lint-go   # Run go vet on all Go packages
-make lint-py   # Run ruff check on Python sidecar code
-make lint-md   # Run markdownlint on all Markdown files
+make lint      # Run all linters (or pass files/directories: make lint cmd/gateway/main.go)
 make lint-k3s  # Run kube-linter on Kubernetes manifests
 ```
 
 ### Code Formatting
 
 ```bash
-make fmt       # Format all code across Go, Python, and Markdown
-make fmt-go    # Format Go code with go fmt
-make fmt-py    # Format Python code with ruff format
-make fmt-md    # Fix Markdown formatting with markdownlint
+make fmt       # Format all code (or pass files/directories: make fmt internal/sidecar/*.py)
 ```
 
 ### Testing & Coverage
@@ -60,7 +54,6 @@ make cov-py    # Run Python test coverage with pytest-cov
 
 ```bash
 make build-go        # Build static Go gateway binary (bin/gateway)
-make build-showcase  # Generate showcase static site assets into dist/
 ```
 
 ### Showcase Development

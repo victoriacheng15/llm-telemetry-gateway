@@ -3,30 +3,8 @@ name: Continuous Integration
 on:
   push:
     branches: [ main ]
-    paths:
-      - '**/*.go'
-      - '**/*.py'
-      - '**/*.feature'
-      - '**/*.md'
-      - 'go.mod'
-      - 'go.sum'
-      - 'pyproject.toml'
-      - 'uv.lock'
-      - 'k3s/**/*.yaml'
-      - 'k3s/**/*.yml'
   pull_request:
     branches: [ main ]
-    paths:
-      - '**/*.go'
-      - '**/*.py'
-      - '**/*.feature'
-      - '**/*.md'
-      - 'go.mod'
-      - 'go.sum'
-      - 'pyproject.toml'
-      - 'uv.lock'
-      - 'k3s/**/*.yaml'
-      - 'k3s/**/*.yml'
 
 env:
   python-version: '3.13'
@@ -68,15 +46,22 @@ jobs:
             markdown:
               - '**/*.md'
 
-  python-ci:
-    name: Python Lint & Test
+  app-ci:
+    name: App Lint & Test
     needs: changes
-    if: ${{ needs.changes.outputs.python == 'true' }}
+    if: ${{ needs.changes.outputs.python == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.e2e == 'true' || needs.changes.outputs.markdown == 'true' }}
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v7
-      - name: Install uv
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.go-version }}
+          cache: true
+
+      - name: Setup uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
@@ -86,49 +71,22 @@ jobs:
         run: |
           make install
 
-      - name: Run Python Linting
+      - name: Run Linters
         run: |
-          make lint-py
+          make lint
 
       - name: Run Python Unit Tests
+        if: ${{ needs.changes.outputs.python == 'true' }}
         run: |
           make test-py
 
-  go-ci:
-    name: Go Lint & Test
-    needs: changes
-    if: ${{ needs.changes.outputs.go == 'true' }}
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: ${{ env.go-version }}
-          cache: true
-
-      - name: Run Go Linting
-        run: |
-          make lint-go
-
       - name: Run Go Unit Tests
+        if: ${{ needs.changes.outputs.go == 'true' }}
         run: |
           make test-go
 
-  e2e-ci:
-    name: Go BDD E2E Tests
-    needs: changes
-    if: ${{ needs.changes.outputs.e2e == 'true' }}
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: ${{ env.go-version }}
-          cache: true
-
       - name: Run Go BDD E2E Tests
+        if: ${{ needs.changes.outputs.e2e == 'true' }}
         run: |
           make test-bdd
 
@@ -144,15 +102,3 @@ jobs:
         with:
           directory: k3s
           config: .kube-linter.yaml
-
-  markdown-ci:
-    name: Markdown Lint
-    needs: changes
-    if: ${{ needs.changes.outputs.markdown == 'true' }}
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v7
-      - name: Run Markdown Linting
-        run: |
-          npx markdownlint-cli '**/*.md' --ignore .venv
