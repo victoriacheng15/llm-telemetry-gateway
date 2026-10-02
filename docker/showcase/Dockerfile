@@ -21,6 +21,7 @@ RUN go mod download
 COPY cmd/showcase/ ./cmd/showcase/
 COPY cmd/showcase-dev/ ./cmd/showcase-dev/
 COPY internal/web/showcase/ ./internal/web/showcase/
+COPY docs/assets/ ./docs/assets/
 COPY .air.showcase.toml ./
 
 EXPOSE 3000

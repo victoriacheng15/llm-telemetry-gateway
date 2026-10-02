@@ -145,6 +145,7 @@ showcase-run: ## Run the showcase container in dev mode with live reload
 	$(CONTAINER_ENGINE) run --rm -it \
 		-v "$(PWD)/cmd":/workspace/cmd:Z \
 		-v "$(PWD)/internal/web/showcase":/workspace/internal/web/showcase:Z \
+		-v "$(PWD)/docs/assets":/workspace/docs/assets:Z \
 		-p 3000:3000 \
 		--name $(SHOWCASE_CONTAINER) \
 		$(SHOWCASE_IMAGE)

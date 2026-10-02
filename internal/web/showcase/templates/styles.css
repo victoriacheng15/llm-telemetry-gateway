@@ -205,6 +205,25 @@ pre.card {
   }
 }
 
+/* Architecture Diagram Styles */
+.architecture-figure {
+  padding: var(--space-sm);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+}
+
+.architecture-img {
+  width: 100%;
+  height: auto;
+  border-radius: calc(var(--border-radius-lg) - 4px);
+  object-fit: contain;
+}
+
 /* Footer Utility Styles */
 .py-8 {
   padding-top: 2rem;

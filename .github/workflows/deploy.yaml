@@ -6,6 +6,7 @@ on:
     paths:
       - "cmd/showcase/**"
       - "internal/web/showcase/**"
+      - "docs/assets/**"
   workflow_dispatch:
 
 permissions:
@@ -31,7 +32,7 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Build
-        run: make build-showcase
+        run: go run cmd/showcase/main.go
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5

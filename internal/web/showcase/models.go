@@ -37,6 +37,7 @@ type ReachConfig struct {
 
 type ArchitectureBlueprintConfig struct {
 	DiagramASCII string `yaml:"diagram_ascii"`
+	DiagramImage string `yaml:"diagram_image"`
 }
 
 type HumblePivotConfig struct {
